@@ -76,12 +76,13 @@ class EQLModel(nn.Module):
         nonlinear_info: list of (u,v) tuples for each hidden layer
         name: model name for identification
     """
-    def __init__(self, input_size, output_size, num_layers=4, 
+    def __init__(self, input_size, output_size, hidden_dim=[0], num_layers=4, 
                  hyp_set=None, nonlinear_info=None, name='EQL'):
         super(EQLModel, self).__init__()
         
         self.input_size = input_size
         self.output_size = output_size
+        self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.name = name
 
@@ -123,8 +124,9 @@ class EQLModel(nn.Module):
             [j % len(self.torch_funcs) for j in range(self.nonlinear_info[i][0])]
             for i in range(num_layers-1)
         ]
+        print(self.unary_functions)
 
-        #self.unary_functions = [[0, 0]]
+        self.unary_functions = [[1, 2], []]
         
         # Build layers
         self.layers = nn.ModuleList()
@@ -133,15 +135,17 @@ class EQLModel(nn.Module):
         # Build hidden layers
         for i in range(num_layers - 1):
             u, v = self.nonlinear_info[i]
-            out_size = u + 2 * v
+            out_size = sum(self.hidden_dim[i]) + 2 * v
             
             # Calculate standard deviation for weight initialization
             stddev = np.sqrt(1.0 / (inp_size * out_size))
+            #agregar el tema de diemnsion para una f2
             
             # Add EQL layer
             layer = EqlLayer(
                 input_size=inp_size,
                 node_info=(u, v),
+                hidden_dim=self.hidden_dim[i],
                 hyp_set=self.torch_funcs,  # Only PyTorch functions
                 unary_funcs=self.unary_functions[i],
                 init_stddev=stddev
@@ -149,7 +153,9 @@ class EQLModel(nn.Module):
             self.layers.append(layer)
             
             # Update input size for next layer
-            inp_size = u + v
+            print(inp_size, out_size)
+            inp_size = sum(self.hidden_dim[i]) + 1 * v
+            
             
         # Add final linear layer
         stddev = np.sqrt(1.0 / (inp_size * output_size))
@@ -191,21 +197,27 @@ class EQLModel(nn.Module):
             
             # Linear transformation
             W_sp = sp.Matrix(W)
-            b_sp = sp.Matrix(b).transpose()
-            X = X * W_sp + b_sp
+            b_sp = sp.Matrix(b)
+            X = W_sp * X + b_sp
             
             # Apply nonlinear transformations
             u, v = layer.node_info
-            Y = sp.zeros(1, u + v)
+            Y = sp.zeros(sum(self.hidden_dim[i]) + v, 1)
             
+            # Initialize the starting index for Y
+            current_index = 0
+
             # Apply unary functions
             for j in range(u):
                 func_idx = layer.unary_funcs[j]
-                Y[0, j] = self.sympy_funcs[func_idx](X[0, j])  # Use sympy function
+                # Loop through the number of nodes for the current unary function
+                for k in range(self.hidden_dim[i][j]):
+                    Y[current_index, 0] = self.sympy_funcs[func_idx](X[current_index, 0])  # Use sympy function
+                    current_index += 1  # Move to the next index in Y
             
             # Apply binary functions (products)
             for j in range(v):
-                Y[0, j+u] = X[0, u+2*j] * X[0, u+2*j+1]
+                Y[j + u, 0] = X[u + 2 * j, 0] * X[u + 2 * j + 1, 0]  # Ensure correct access to X
             
             X = Y
         
@@ -213,8 +225,8 @@ class EQLModel(nn.Module):
         W = self.output_layer.W.detach().numpy() * self.output_layer.W_mask.detach().numpy()
         b = self.output_layer.b.detach().numpy() * self.output_layer.b_mask.detach().numpy()
         W_sp = sp.Matrix(W)
-        b_sp = sp.Matrix(b).transpose()
-        X = X * W_sp + b_sp
+        b_sp = sp.Matrix(b)
+        X = W_sp * X + b_sp
         
         print("Learned Equation:")
         for i in range(X.cols):

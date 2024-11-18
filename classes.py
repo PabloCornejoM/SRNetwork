@@ -20,7 +20,7 @@ class Connected(nn.Module):
         self.init_stddev = init_stddev
 
         # Weight and bias parameters
-        self.W = nn.Parameter(torch.Tensor(input_size, output_size))
+        self.W = nn.Parameter(torch.Tensor(output_size, input_size))
         self.b = nn.Parameter(torch.Tensor(output_size))
 
         # Initialize weights and biases
@@ -43,7 +43,8 @@ class Connected(nn.Module):
         # Apply weight masks for trimming
         W_trimmed = self.W * self.W_mask
         b_trimmed = self.b * self.b_mask
-        output = torch.matmul(x, W_trimmed) + b_trimmed
+        #output = torch.matmul(W_trimmed, x.t()) + b_trimmed
+        output = torch.matmul(x, W_trimmed.t()) + b_trimmed  # Transpose W_trimmed
         return output
 
     def l1_regularization(self):
@@ -75,10 +76,11 @@ class EqlLayer(Connected):
         init_stddev: float, standard deviation for weight initialization
         regularization: float, L1 regularization coefficient
     """
-    def __init__(self, input_size, node_info, hyp_set, unary_funcs, 
+    def __init__(self, input_size, node_info, hidden_dim, hyp_set, unary_funcs, 
                  init_stddev=None, regularization=0.0):
         u, v = node_info
-        output_size = u + 2 * v  # For linear output
+
+        output_size = sum(hidden_dim) + 2 * v  # For linear output
         super(EqlLayer, self).__init__(
             input_size, output_size, 
             init_stddev=init_stddev,
@@ -87,22 +89,31 @@ class EqlLayer(Connected):
         self.node_info = node_info
         self.hyp_set = hyp_set
         self.unary_funcs = unary_funcs
+        self.hidden_dim = hidden_dim
 
     def forward(self, x):
         # Linear transformation
         lin_output = super(EqlLayer, self).forward(x)
-
+        
         u, v = self.node_info
         outputs = []
 
-        # Apply unary functions
+        # Apply unary functions row-wise
+        lin_output_t = lin_output.t()  # Transpose for row-wise operations
+        current_index = 0  # Initialize the starting index for accessing lin_output_t
         for i in range(u):
             func = self.hyp_set[self.unary_funcs[i]]
-            outputs.append(func(lin_output[:, i:i+1]))
+            num_nodes = self.hidden_dim[i]  # Get the number of nodes for the current unary function
+            
+            # Access the correct segment of lin_output_t
+            outputs.append(func(lin_output_t[current_index:current_index + num_nodes]).t())
+            
+            # Update the current index for the next unary function
+            current_index += num_nodes
 
-        # Apply binary functions (products)
+        # Apply binary functions (products) row-wise
         for i in range(u, u + 2 * v, 2):
-            prod = lin_output[:, i:i+1] * lin_output[:, i+1:i+2]
+            prod = lin_output_t[i:i+1].t() * lin_output_t[i+1:i+2].t()
             outputs.append(prod)
 
         # Concatenate outputs
