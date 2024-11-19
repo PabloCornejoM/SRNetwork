@@ -1,30 +1,35 @@
 import torch
 import numpy as np
-from torch.utils.data import TensorDataset, DataLoader
 from models import EQLModel
+from custom_functions import SafeLog, SafeExp, SafeSin
+from torch.utils.data import TensorDataset, DataLoader
+
 
 # Define the hypothesis set of unary functions
 hyp_set = [
     torch.nn.Identity(),  # Identity function
     torch.sin,           # Sine function
     torch.cos,           # Cosine function
+    SafeLog(),
+    SafeExp(),
+    SafeSin()
     #torch.sigmoid        # Sigmoid function
 ]
 
 # Model configuration
 input_size = 1
 output_size = 1
-hidden_dim = [[1, 2], []] # just for unary
-num_layers = 3 # hidden + 1 output
+hidden_dim = [[1], []] # just for unary
+num_layers = 2 # hidden + 1 output
 nonlinear_info = [
-    (2, 0),  # Layer 1: 4 unary, 4 binary functions
-    (0, 1),  # Layer 2
+    (1, 0),  # Layer 1: 4 unary, 4 binary functions
+    (0, 0),  # Layer 2
     (0, 0)   # Layer 3
 ]
 
 # Create synthetic data
-x_values = np.linspace(-2 * np.pi, 2 * np.pi, 1000)
-y_values = np.sin(x_values)  # Example function: y = sin(x)
+x_values = np.linspace(0.1 * np.pi, 2 * np.pi, 1000)
+y_values = np.log(x_values)  # Example function: y = sin(x)
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)
@@ -49,7 +54,7 @@ print(model)
 equation = model.get_equation()
 
 # Training parameters
-num_epochs = 170  # Total epochs (matches the three phases: 25% + 70% + 5%)
+num_epochs = 1000  # Total epochs (matches the three phases: 25% + 70% + 5%)
 learning_rate = 0.001
 reg_strength = 1e-3
 threshold = 0.1

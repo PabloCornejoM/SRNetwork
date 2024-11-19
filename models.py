@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 
 import sympy
+from custom_functions import SafeLog, SafeExp, SYMPY_MAPPING, SafeSin
 
 def train_eql_model(model, train_loader, num_epochs, learning_rate=0.001,
                     reg_strength=1e-3, threshold=0.1):
@@ -88,18 +89,29 @@ class EQLModel(nn.Module):
 
         # Default hypothesis set if none provided
         if hyp_set is None:
+            # Initialize base functions with proper dimensions
+            log_fn = SafeLog()
+            exp_fn = SafeExp()
+            sin_fn = SafeSin()
+            
             self.torch_funcs = [
                 torch.nn.Identity(),
-                torch.sin,
-                torch.cos,
-                #torch.sigmoid
+                sin_fn,
+                log_fn,
+                exp_fn
             ]
+            
             self.sympy_funcs = [
                 sympy.Id,
                 sympy.sin,
-                sympy.cos,
-                #sympy.Function("sigm")
+                sympy.log,
+                sympy.exp
             ]
+            
+            # Initialize parameters for custom functions
+            for func in self.torch_funcs:
+                if isinstance(func, BaseSafeFunction):
+                    func.init_parameters(input_size, hidden_dim[0])
         else:
             self.torch_funcs = hyp_set
             # Create corresponding sympy functions
@@ -111,8 +123,8 @@ class EQLModel(nn.Module):
                     self.sympy_funcs.append(sympy.sin)
                 elif f == torch.cos:
                     self.sympy_funcs.append(sympy.cos)
-                elif f == torch.sigmoid:
-                    self.sympy_funcs.append(sympy.Function("sigm"))
+                elif isinstance(f, (SafeLog, SafeExp, SafeSin)):
+                    self.sympy_funcs.append(SYMPY_MAPPING[f.__class__])
                 else:
                     raise ValueError(f"Unknown function type: {type(f)}")
         
@@ -126,7 +138,7 @@ class EQLModel(nn.Module):
         ]
         print(self.unary_functions)
 
-        self.unary_functions = [[1, 2], []]
+        self.unary_functions = [[3], []]
         
         # Build layers
         self.layers = nn.ModuleList()
