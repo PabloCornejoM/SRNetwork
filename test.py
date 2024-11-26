@@ -19,17 +19,17 @@ hyp_set = [
 # Model configuration
 input_size = 1
 output_size = 1
-hidden_dim = [[1], []] # just for unary
+hidden_dim = [[1, 1], []] # just for unary
 num_layers = 2 # hidden + 1 output
 nonlinear_info = [
-    (1, 0),  # Layer 1: 4 unary, 4 binary functions
-    (0, 0),  # Layer 2
+    (2, 0),  # Layer 1: 4 unary, 4 binary functions
+    (0, 1),  # Layer 2
     (0, 0)   # Layer 3
 ]
 
 # Create synthetic data
-x_values = np.linspace(0.1 * np.pi, 2 * np.pi, 1000)
-y_values = np.log(x_values)  # Example function: y = sin(x)
+x_values = np.linspace(0.1 * np.pi, 2 * np.pi, 2000)
+y_values = np.log(x_values) + np.sin(x_values)  # Example function: y = log(x) + sin(x)
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)

@@ -138,7 +138,7 @@ class EQLModel(nn.Module):
         ]
         print(self.unary_functions)
 
-        self.unary_functions = [[3], []]
+        self.unary_functions = [[5, 3], []] # which unary functions to use per layer
         
         # Build layers
         self.layers = nn.ModuleList()

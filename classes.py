@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import inspect
 
 class Connected(nn.Module):
     """
@@ -12,12 +13,14 @@ class Connected(nn.Module):
         init_stddev: float, standard deviation for weight initialization.
         regularization: float, L1 regularization coefficient.
     """
-    def __init__(self, input_size, output_size, init_stddev=None, regularization=0.0):
+    def __init__(self, input_size, output_size, init_stddev=None, regularization=0.0, hidden_dim=None, function_classes=None):
         super(Connected, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.regularization = regularization
+        self.function_classes = function_classes
         self.init_stddev = init_stddev
+        self.hidden_dim = hidden_dim
 
         # Weight and bias parameters
         self.W = nn.Parameter(torch.Tensor(output_size, input_size))
@@ -31,13 +34,25 @@ class Connected(nn.Module):
         self.register_buffer('b_mask', torch.ones_like(self.b))
 
     def reset_parameters(self):
-        if self.init_stddev is not None:
-            # Use provided standard deviation
+        if self.function_classes is not None and self.hidden_dim is not None:
+            current_index = 0
+            # Initialize each segment according to its corresponding function class
+            for func_class, num_nodes in zip(self.function_classes, self.hidden_dim):
+                #if isinstance(func_class, type):  # Check if it's a class
+                    # Create an instance of the function class
+                func_instance = func_class
+                    # Initialize the parameters using the function class methods
+                func_instance.init_parameters(self.input_size, num_nodes)
+                    # Copy the initialized parameters to the corresponding segment
+                self.W.data[current_index:current_index + num_nodes] = func_instance.weight.data
+                self.b.data[current_index:current_index + num_nodes] = func_instance.bias.data
+                current_index += num_nodes
+        elif self.init_stddev is not None:
             nn.init.normal_(self.W, std=self.init_stddev)
+            nn.init.zeros_(self.b)
         else:
-            # Default to Kaiming initialization
             nn.init.kaiming_normal_(self.W, nonlinearity='linear')
-        nn.init.zeros_(self.b)
+            nn.init.zeros_(self.b)
 
     def forward(self, x):
         # Apply weight masks for trimming
@@ -79,12 +94,23 @@ class EqlLayer(Connected):
     def __init__(self, input_size, node_info, hidden_dim, hyp_set, unary_funcs, 
                  init_stddev=None, regularization=0.0):
         u, v = node_info
-
-        output_size = sum(hidden_dim) + 2 * v  # For linear output
+        output_size = sum(hidden_dim) + 2 * v
+        
+        # Get the function classes from hyp_set based on unary_funcs indices
+        function_classes = []
+        for func_idx in unary_funcs:
+            function_classes.append(hyp_set[func_idx])
+            #if inspect.isclass(hyp_set[func_idx]):  # Check if it's a class
+                #function_classes.append(hyp_set[func_idx])
+            #else:
+                #function_classes.append(None)
+        
         super(EqlLayer, self).__init__(
-            input_size, output_size, 
+            input_size, output_size,
             init_stddev=init_stddev,
-            regularization=regularization
+            regularization=regularization,
+            hidden_dim=hidden_dim,
+            function_classes=function_classes
         )
         self.node_info = node_info
         self.hyp_set = hyp_set

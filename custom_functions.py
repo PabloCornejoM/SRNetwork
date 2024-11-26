@@ -16,7 +16,7 @@ class BaseSafeFunction(nn.Module):
 
     def init_parameters(self, input_size, output_size):
         """Initialize weights and biases with appropriate dimensions."""
-        self.weight = nn.Parameter(torch.empty(input_size, output_size))
+        self.weight = nn.Parameter(torch.empty(output_size, input_size))
         self.bias = nn.Parameter(torch.zeros(output_size))
         self._init_weight_values()
         self._init_bias_values()
@@ -90,7 +90,6 @@ class SafeSin(BaseSafeFunction):
         super().__init__("sin", "sin")
 
     def forward(self, x):
-        x = torch.matmul(x, self.weight) + self.bias
         return torch.sin(x)
     
     def _init_weight_values(self):
