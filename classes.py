@@ -34,6 +34,19 @@ class Connected(nn.Module):
         self.register_buffer('b_mask', torch.ones_like(self.b))
 
     def reset_parameters(self):
+        """
+        Reset the layer's parameters based on initialization settings.
+
+        If function_classes and hidden_dim are provided, initializes segments of weights
+        according to the specified function classes. Otherwise, uses either normal
+        initialization with specified standard deviation (init_stddev) or Kaiming
+        initialization for linear layers.
+
+        The initialization process:
+        1. For function classes: Initializes weights/biases per function class specs
+        2. For init_stddev: Uses normal distribution with specified std
+        3. Default: Uses Kaiming initialization for weights, zeros for biases
+        """
         if self.function_classes is not None and self.hidden_dim is not None:
             current_index = 0
             # Initialize each segment according to its corresponding function class
@@ -118,23 +131,28 @@ class EqlLayer(Connected):
         self.hidden_dim = hidden_dim
 
     def forward(self, x):
-        # Linear transformation
+        # Linear transformation for non-power functions
         lin_output = super(EqlLayer, self).forward(x)
         
         u, v = self.node_info
         outputs = []
-
-        # Apply unary functions row-wise
-        lin_output_t = lin_output.t()  # Transpose for row-wise operations
-        current_index = 0  # Initialize the starting index for accessing lin_output_t
+        
+        # Process each function
+        lin_output_t = lin_output.t()
+        current_index = 0
+        
         for i in range(u):
             func = self.hyp_set[self.unary_funcs[i]]
-            num_nodes = self.hidden_dim[i]  # Get the number of nodes for the current unary function
+            num_nodes = self.hidden_dim[i]
             
-            # Access the correct segment of lin_output_t
-            outputs.append(func(lin_output_t[current_index:current_index + num_nodes]).t())
+            if isinstance(func, SafePower):
+                # Special handling for SafePower
+                segment_output = func(x)  # Pass raw input x instead of transformed
+                outputs.append(segment_output)
+            else:
+                # Regular handling for other functions
+                outputs.append(func(lin_output_t[current_index:current_index + num_nodes]).t())
             
-            # Update the current index for the next unary function
             current_index += num_nodes
 
         # Apply binary functions (products) row-wise

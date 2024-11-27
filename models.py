@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 
 import sympy
-from custom_functions import SafeLog, SafeExp, SYMPY_MAPPING, SafeSin
+from custom_functions import SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
 
 def train_eql_model(model, train_loader, num_epochs, learning_rate=0.001,
                     reg_strength=1e-3, threshold=0.1):
@@ -123,7 +123,7 @@ class EQLModel(nn.Module):
                     self.sympy_funcs.append(sympy.sin)
                 elif f == torch.cos:
                     self.sympy_funcs.append(sympy.cos)
-                elif isinstance(f, (SafeLog, SafeExp, SafeSin)):
+                elif isinstance(f, (SafeLog, SafeExp, SafeSin, SafePower)):
                     self.sympy_funcs.append(SYMPY_MAPPING[f.__class__])
                 else:
                     raise ValueError(f"Unknown function type: {type(f)}")
@@ -138,7 +138,7 @@ class EQLModel(nn.Module):
         ]
         print(self.unary_functions)
 
-        self.unary_functions = [[5, 3], []] # which unary functions to use per layer
+        self.unary_functions = [[6], []] # which unary functions to use per layer
         
         # Build layers
         self.layers = nn.ModuleList()

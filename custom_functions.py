@@ -105,9 +105,77 @@ class SafeSin(BaseSafeFunction):
         torch.clip_(self.weight, -1, 1)
         torch.clip_(self.bias, -1, 1)
 
-# Map PyTorch functions to their sympy equivalents
+class SafePower(BaseSafeFunction):
+    """
+    Safe power function with trainable exponents and sign handling.
+    Implements x^p where p is trainable and handles negative inputs safely.
+    """
+    def __init__(self):
+        super().__init__("power", "pow")
+        self.hardsigmoid = nn.Hardsigmoid()
+        self.sign_params = None
+
+    def init_parameters(self, input_size, output_size):
+        """Initialize parameters for EQL layer integration"""
+        self.weight = nn.Parameter(torch.empty(output_size, input_size))
+        self.bias = nn.Parameter(torch.zeros(output_size))
+        self.sign_params = nn.Parameter(torch.zeros(output_size))
+        
+        # Initialize exponents between 1 and 3
+        nn.init.uniform_(self.weight, 1.0, 3.0)
+        nn.init.zeros_(self.bias)
+        nn.init.zeros_(self.sign_params)
+
+    def forward(self, x):
+        # Handle signs
+        input_signs = torch.sign(x)
+        x_abs = torch.clamp(torch.abs(x), min=1e-7)
+        
+        # Compute power using log-exp trick for numerical stability
+        log_x = torch.log(x_abs)
+        power_result = torch.exp(torch.matmul(log_x, self.weight.t()))
+        
+        # Determine output sign based on input sign and learned sign behavior
+        sign_factors = self.hardsigmoid(self.sign_params)
+        if not self.training:
+            sign_factors = (sign_factors > 0.5).float()
+        
+        # Combine signs: 1 for even powers, input_sign for odd powers
+        output_signs = torch.where(
+            sign_factors > 0.5,
+            torch.ones_like(power_result),
+            input_signs.unsqueeze(-1)
+        )
+        
+        return output_signs * power_result + self.bias
+
+    def clip_parameters(self):
+        """Clip parameters to reasonable ranges"""
+        with torch.no_grad():
+            self.weight.data.clamp_(-4.0, 6.0)
+
+    def get_sympy_expression(self, x, weight, sign):
+        """Helper method to generate sympy expression for symbolic representation"""
+        # Create a power expression with the weight as the exponent
+        # and handle the sign based on the sign parameter
+        if sign > 0.5:  # even power behavior
+            return sympy.Abs(x)**weight
+        else:  # odd power behavior
+            return sympy.sign(x) * (sympy.Abs(x)**weight)
+
+# Update the SYMPY_MAPPING dictionary to include SafePower
+def power_to_sympy(x, **kwargs):
+    """Convert power function to sympy expression"""
+    weight = kwargs.get('weight', 1)
+    sign = kwargs.get('sign', 0)
+    if sign > 0.5:  # even power behavior
+        return sympy.Abs(x)**weight
+    else:  # odd power behavior
+        return sympy.sign(x) * (sympy.Abs(x)**weight)
+
 SYMPY_MAPPING = {
     SafeLog: sympy.log,
     SafeExp: sympy.exp,
-    SafeSin: sympy.sin
+    SafeSin: sympy.sin,
+    SafePower: power_to_sympy  # Add SafePower to the mapping
 } 

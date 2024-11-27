@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from models import EQLModel
-from custom_functions import SafeLog, SafeExp, SafeSin
+from custom_functions import SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
 
 
@@ -12,17 +12,18 @@ hyp_set = [
     torch.cos,           # Cosine function
     SafeLog(),
     SafeExp(),
-    SafeSin()
+    SafeSin(),
+    SafePower()
     #torch.sigmoid        # Sigmoid function
 ]
 
 # Model configuration
 input_size = 1
 output_size = 1
-hidden_dim = [[1, 1], []] # just for unary
+hidden_dim = [[1], []] # just for unary
 num_layers = 2 # hidden + 1 output
 nonlinear_info = [
-    (2, 0),  # Layer 1: 4 unary, 4 binary functions
+    (1, 0),  # Layer 1: 4 unary, 4 binary functions
     (0, 1),  # Layer 2
     (0, 0)   # Layer 3
 ]
