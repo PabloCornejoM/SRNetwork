@@ -15,14 +15,14 @@ class Connected(nn.Module):
         init_stddev: float, standard deviation for weight initialization.
         regularization: float, L1 regularization coefficient.
     """
-    def __init__(self, input_size, output_size, init_stddev=None, regularization=0.0, hidden_dim=None, function_classes=None):
+    def __init__(self, input_size, output_size, init_stddev=None, regularization=0.0, function_classes=None):
         super(Connected, self).__init__()
         self.input_size = input_size
         self.output_size = output_size
         self.regularization = regularization
         self.function_classes = function_classes
         self.init_stddev = init_stddev
-        self.hidden_dim = hidden_dim
+        #self.hidden_dim = hidden_dim
 
         # Weight and bias parameters
         self.W = nn.Parameter(torch.Tensor(output_size, input_size))
@@ -49,19 +49,19 @@ class Connected(nn.Module):
         2. For init_stddev: Uses normal distribution with specified std
         3. Default: Uses Kaiming initialization for weights, zeros for biases
         """
-        if self.function_classes is not None and self.hidden_dim is not None:
+        if self.function_classes is not None:
             current_index = 0
             # Initialize each segment according to its corresponding function class
-            for func_class, num_nodes in zip(self.function_classes, self.hidden_dim):
+            for func_class in self.function_classes:
                 #if isinstance(func_class, type):  # Check if it's a class
                     # Create an instance of the function class
                 func_instance = func_class
                     # Initialize the parameters using the function class methods
-                func_instance.init_parameters(self.input_size, num_nodes)
+                func_instance.init_parameters(self.input_size, 1)
                     # Copy the initialized parameters to the corresponding segment
-                self.W.data[current_index:current_index + num_nodes] = func_instance.weight.data
-                self.b.data[current_index:current_index + num_nodes] = func_instance.bias.data
-                current_index += num_nodes
+                self.W.data[current_index:current_index + 1] = func_instance.weight.data
+                self.b.data[current_index:current_index + 1] = func_instance.bias.data
+                current_index += 1
         elif self.init_stddev is not None:
             nn.init.normal_(self.W, std=self.init_stddev)
             nn.init.zeros_(self.b)
@@ -106,10 +106,10 @@ class EqlLayer(Connected):
         init_stddev: float, standard deviation for weight initialization
         regularization: float, L1 regularization coefficient
     """
-    def __init__(self, input_size, node_info, hidden_dim, hyp_set, unary_funcs, 
+    def __init__(self, input_size, node_info, hyp_set, unary_funcs, 
                  init_stddev=None, regularization=0.0):
         u, v = node_info
-        output_size = sum(hidden_dim) + 2 * v
+        output_size = u + 2 * v
         
         # Get the function classes from hyp_set based on unary_funcs indices
         function_classes = []
@@ -124,13 +124,13 @@ class EqlLayer(Connected):
             input_size, output_size,
             init_stddev=init_stddev,
             regularization=regularization,
-            hidden_dim=hidden_dim,
+            #hidden_dim=hidden_dim,
             function_classes=function_classes
         )
         self.node_info = node_info
         self.hyp_set = hyp_set
         self.unary_funcs = unary_funcs
-        self.hidden_dim = hidden_dim
+        #self.hidden_dim = hidden_dim
 
     def forward(self, x):
         # Linear transformation for non-power functions
@@ -145,7 +145,7 @@ class EqlLayer(Connected):
         
         for i in range(u):
             func = self.hyp_set[self.unary_funcs[i]]
-            num_nodes = self.hidden_dim[i]
+            num_nodes = 1
             
             if isinstance(func, SafePower):
                 # Special handling for SafePower
@@ -208,3 +208,118 @@ class DivLayer(Connected):
         )
         
         return output
+
+class MaskedConnected(Connected):
+    """
+    A variant of Connected layer that supports custom connectivity patterns through masks.
+    
+    Arguments:
+        input_size: int, number of input features
+        output_size: int, number of output features
+        connectivity_mask: Optional binary matrix specifying allowed connections
+        init_stddev: float, standard deviation for weight initialization
+        regularization: float, L1 regularization coefficient
+    """
+    def __init__(self, input_size, output_size, connectivity_mask=None, 
+                 init_stddev=None, regularization=0.0, hidden_dim=None, function_classes=None):
+        super(MaskedConnected, self).__init__(
+            input_size=input_size,
+            output_size=output_size,
+            init_stddev=init_stddev,
+            regularization=regularization,
+            hidden_dim=hidden_dim,
+            function_classes=function_classes
+        )
+        
+        # Initialize connectivity mask
+        if connectivity_mask is not None:
+            mask = torch.tensor(connectivity_mask, dtype=torch.float32)
+            if mask.shape != (output_size, input_size):
+                raise ValueError(f"Connectivity mask shape {mask.shape} does not match weight shape {(output_size, input_size)}")
+            self.register_buffer('connectivity_mask', mask)
+        else:
+            self.register_buffer('connectivity_mask', torch.ones(output_size, input_size))
+            
+        # Apply connectivity mask to weight mask
+        self.W_mask.mul_(self.connectivity_mask)
+        
+    def forward(self, x):
+        # Apply both connectivity and trimming masks
+        W_masked = self.W * self.W_mask * self.connectivity_mask
+        b_masked = self.b * self.b_mask
+        return torch.matmul(x, W_masked.t()) + b_masked
+        
+    def l1_regularization(self):
+        # Calculate L1 regularization only for connected weights
+        reg_loss = self.regularization * (
+            torch.sum(torch.abs(self.W * self.W_mask * self.connectivity_mask)) + 
+            torch.sum(torch.abs(self.b * self.b_mask))
+        )
+        return reg_loss
+        
+    def apply_weight_trimming(self, threshold):
+        # Zero out weights below threshold while respecting connectivity mask
+        with torch.no_grad():
+            weight_mask = (torch.abs(self.W) >= threshold).float() * self.connectivity_mask
+            self.W_mask.copy_(weight_mask)
+            self.b_mask.copy_((torch.abs(self.b) >= threshold).float())
+
+class MaskedEqlLayer(EqlLayer):
+    """
+    A variant of EqlLayer that supports custom connectivity patterns through masks.
+    
+    Arguments:
+        input_size: int, number of input features
+        node_info: tuple (u, v), where:
+            u: number of unary functions
+            v: number of binary functions
+        hidden_dim: list of integers specifying number of nodes for each unary function
+        hyp_set: list of unary PyTorch functions to be used
+        unary_funcs: list of indices specifying which functions from hyp_set to use
+        connectivity_mask: Optional binary matrix specifying allowed connections
+        init_stddev: float, standard deviation for weight initialization
+        regularization: float, L1 regularization coefficient
+    """
+    def __init__(self, input_size, node_info, hyp_set, unary_funcs,
+                 connectivity_mask=None, init_stddev=None, regularization=0.0):
+        super(MaskedEqlLayer, self).__init__(
+            input_size=input_size,
+            node_info=node_info,
+            hyp_set=hyp_set,
+            unary_funcs=unary_funcs,
+            init_stddev=init_stddev,
+            regularization=regularization
+        )
+        
+        # Initialize connectivity mask
+        u, v = node_info
+        output_size = u + 2 * v
+        if connectivity_mask is not None:
+            mask = torch.tensor(connectivity_mask, dtype=torch.float32)
+            if mask.shape != (output_size, input_size):
+                raise ValueError(f"Connectivity mask shape {mask.shape} does not match weight shape {(output_size, input_size)}")
+            self.register_buffer('connectivity_mask', mask)
+        else:
+            self.register_buffer('connectivity_mask', torch.ones(output_size, input_size))
+            
+        # Apply connectivity mask to weight mask
+        self.W_mask.mul_(self.connectivity_mask)
+
+    def forward(self, x):
+        # Apply connectivity mask to weights before standard forward pass
+        self.W_mask.mul_(self.connectivity_mask)
+        return super(MaskedEqlLayer, self).forward(x)
+
+    def l1_regularization(self):
+        # Include connectivity mask in regularization
+        reg_loss = self.regularization * (
+            torch.sum(torch.abs(self.W * self.W_mask * self.connectivity_mask)) + 
+            torch.sum(torch.abs(self.b * self.b_mask))
+        )
+        return reg_loss
+
+    def apply_weight_trimming(self, threshold):
+        # Apply trimming while respecting connectivity mask
+        with torch.no_grad():
+            self.W_mask.copy_((torch.abs(self.W) >= threshold).float() * self.connectivity_mask)
+            self.b_mask.copy_((torch.abs(self.b) >= threshold).float())

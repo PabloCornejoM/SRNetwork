@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from models import EQLModel
+from models import EQLModel, ConnectivityEQLModel
 from custom_functions import SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -20,11 +20,11 @@ hyp_set = [
 # Model configuration
 input_size = 1
 output_size = 1
-hidden_dim = [[2], []] # just for unary
+hidden_dim = [[2], []] # it is the output size of each neurons in each layer
 num_layers = 2 # hidden + 1 output
-nonlinear_info = [
-    (1, 0),  # Layer 1: 4 unary, 4 binary functions
-    (0, 1),  # Layer 2
+nonlinear_info = [ # it is the number of neurons in each layer
+    (2, 0),  # Layer 1: 4 unary, 4 binary functions
+    (2, 0),  # Layer 2
     (0, 0)   # Layer 3
 ]
 
@@ -42,14 +42,26 @@ batch_size = 32
 train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # Initialize model
-model = EQLModel(
-    input_size=input_size,
-    output_size=output_size,
-    hidden_dim = hidden_dim,
-    num_layers=num_layers,
+model = ConnectivityEQLModel(
+    input_size=1,
+    output_size=1,
+    #hidden_dim=[2, 2],  # Two hidden layers with 2 neurons each
+    num_layers=3,
     hyp_set=hyp_set,
-    nonlinear_info=nonlinear_info
+    nonlinear_info=nonlinear_info,
+    min_connections_per_neuron=1  # Each neuron must have at least one connection
 )
+
+# Train all valid architectures
+best_model, best_loss, best_architecture = model.train_all_architectures(
+    train_loader,
+    num_epochs=100,
+    max_architectures=10,  # Limit to 10 architectures
+    max_patterns_per_layer= 10  # Limit to 5 patterns per layer
+)
+
+# Print the best architecture
+print(best_model)
 
 print(model)
 equation = model.get_equation()
@@ -59,17 +71,6 @@ num_epochs = 1000  # Total epochs (matches the three phases: 25% + 70% + 5%)
 learning_rate = 0.001
 reg_strength = 1e-3
 threshold = 0.1
-
-# Train the model
-from models import train_eql_model
-train_eql_model(
-    model=model,
-    train_loader=train_loader,
-    num_epochs=num_epochs,
-    learning_rate=learning_rate,
-    reg_strength=reg_strength,
-    threshold=threshold
-)
 
 # Evaluate and plot results
 model.eval()
