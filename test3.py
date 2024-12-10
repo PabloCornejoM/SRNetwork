@@ -1,6 +1,8 @@
+## test 3 for running all architectures connectivity patterns
+
 import torch
 import numpy as np
-from models import EQLModel
+from models import EQLModel, ConnectivityEQLModel
 from custom_functions import SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -41,12 +43,12 @@ dataset = TensorDataset(X, y)
 batch_size = 32
 train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-# Initialize model
-model = EQLModel(
-    input_size=input_size,
-    output_size=output_size,
-    hidden_dim = hidden_dim,
-    num_layers=num_layers,
+# Create a model with connectivity patterns
+model = ConnectivityEQLModel(
+    input_size=1,
+    output_size=1,
+    hidden_dim=[2, 2],  # Two hidden layers with 2 neurons each
+    num_layers=4,
     hyp_set=hyp_set,
     nonlinear_info=nonlinear_info
 )
@@ -60,15 +62,13 @@ learning_rate = 0.001
 reg_strength = 1e-3
 threshold = 0.1
 
-# Train the model
-from models import train_eql_model
-train_eql_model(
-    model=model,
+# Train all possible valid architectures and get the best one
+best_model, best_loss, best_architecture = model.train_all_architectures(
     train_loader=train_loader,
-    num_epochs=num_epochs,
-    learning_rate=learning_rate,
-    reg_strength=reg_strength,
-    threshold=threshold
+    num_epochs=100,
+    learning_rate=0.001,
+    reg_strength=1e-3,
+    threshold=0.1
 )
 
 # Evaluate and plot results

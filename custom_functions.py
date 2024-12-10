@@ -136,18 +136,18 @@ class SafePower(BaseSafeFunction):
         power_result = torch.exp(torch.matmul(log_x, self.weight.t()))
         
         # Determine output sign based on input sign and learned sign behavior
-        sign_factors = self.hardsigmoid(self.sign_params)
+        sign_factors = self.hardsigmoid(self.sign_params)  # Shape: scalar or (1)
         if not self.training:
             sign_factors = (sign_factors > 0.5).float()
         
-        # Combine signs: 1 for even powers, input_sign for odd powers
-        output_signs = torch.where(
-            sign_factors > 0.5,
-            torch.ones_like(power_result),
-            input_signs.unsqueeze(-1)
-        )
+        # Compute the sign tensor similar to the first function
+        sign = torch.ones_like(input_signs) * sign_factors + input_signs * (1 - sign_factors)  # Shape: (n, d)
+        sign = torch.prod(sign, dim=1, keepdim=True)  # Shape: (n, 1)
         
-        return output_signs * power_result + self.bias
+        # Multiply the sign with the power result
+        power_out = sign * power_result + self.bias  # Shapes: (n, 1) * (n, output_dim) => (n, output_dim)
+        
+        return power_out
 
     def clip_parameters(self):
         """Clip parameters to reasonable ranges"""

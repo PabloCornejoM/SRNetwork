@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import inspect
 
+from custom_functions import SafePower  
+
 class Connected(nn.Module):
     """
     General-purpose fully connected layer with L1 regularization and weight trimming.
