@@ -221,13 +221,12 @@ class MaskedConnected(Connected):
         regularization: float, L1 regularization coefficient
     """
     def __init__(self, input_size, output_size, connectivity_mask=None, 
-                 init_stddev=None, regularization=0.0, hidden_dim=None, function_classes=None):
+                 init_stddev=None, regularization=0.0, function_classes=None):
         super(MaskedConnected, self).__init__(
             input_size=input_size,
             output_size=output_size,
             init_stddev=init_stddev,
             regularization=regularization,
-            hidden_dim=hidden_dim,
             function_classes=function_classes
         )
         

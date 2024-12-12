@@ -159,23 +159,48 @@ class SafePower(BaseSafeFunction):
         # Create a power expression with the weight as the exponent
         # and handle the sign based on the sign parameter
         if sign > 0.5:  # even power behavior
-            return sympy.Abs(x)**weight
+            return f"{sympy.Abs(x)}^{weight}"
         else:  # odd power behavior
-            return sympy.sign(x) * (sympy.Abs(x)**weight)
+            return f"sign({x}) * {sympy.Abs(x)}^{weight}"
 
 # Update the SYMPY_MAPPING dictionary to include SafePower
 def power_to_sympy(x, **kwargs):
     """Convert power function to sympy expression"""
     weight = kwargs.get('weight', 1)
     sign = kwargs.get('sign', 0)
+    
+    # Create a visual representation of the power function
     if sign > 0.5:  # even power behavior
-        return sympy.Abs(x)**weight
+        return f"{sympy.Abs(x)}^{weight}"
     else:  # odd power behavior
-        return sympy.sign(x) * (sympy.Abs(x)**weight)
+        return f"sign({x}) * {sympy.Abs(x)}^{weight}"
+
+
+class SafeIdentityFunction(BaseSafeFunction):
+    """Base class for identity function."""
+    
+    def __init__(self):
+        super().__init__("identity", "id")
+
+    def forward(self, x):
+        """Forward pass for identity function."""
+        return x  # Simply return the input as is
+
+    def _init_weight_values(self):
+        """Identity function does not require weight initialization."""
+        pass  # No weights to initialize for identity function
+
+    def _init_bias_values(self):
+        """Identity function does not require bias initialization."""
+        pass  # No biases to initialize for identity function
+ 
+
 
 SYMPY_MAPPING = {
     SafeLog: sympy.log,
     SafeExp: sympy.exp,
     SafeSin: sympy.sin,
-    SafePower: power_to_sympy  # Add SafePower to the mapping
+    SafePower: power_to_sympy,  # Add SafePower to the mapping
+    SafeIdentityFunction: sympy.Id  # Add BaseIdentityFunction to the mapping
 } 
+

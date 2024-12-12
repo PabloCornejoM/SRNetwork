@@ -23,14 +23,14 @@ output_size = 1
 hidden_dim = [[2], []] # it is the output size of each neurons in each layer
 num_layers = 2 # hidden + 1 output
 nonlinear_info = [ # it is the number of neurons in each layer
-    (2, 0),  # Layer 1: 4 unary, 4 binary functions
-    (2, 0),  # Layer 2
+    (1, 0),  # Layer 1: 4 unary, 4 binary functions
+    (0, 0),  # Layer 2
     (0, 0)   # Layer 3
 ]
 
 # Create synthetic data
-x_values = np.linspace(-1, 1, 2000)
-y_values = np.sin(x_values) + np.sin(x_values**2)  # Example function: y = x^2
+x_values = np.linspace(0, 10, 5000)
+y_values = x_values**2 # Example function: y = x^2
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)
@@ -38,7 +38,7 @@ y = torch.tensor(y_values, dtype=torch.float32).reshape(-1, 1)
 
 # Create data loader
 dataset = TensorDataset(X, y)
-batch_size = 32
+batch_size = 1000
 train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 # Initialize model
@@ -46,7 +46,7 @@ model = ConnectivityEQLModel(
     input_size=1,
     output_size=1,
     #hidden_dim=[2, 2],  # Two hidden layers with 2 neurons each
-    num_layers=3,
+    num_layers=num_layers,
     hyp_set=hyp_set,
     nonlinear_info=nonlinear_info,
     min_connections_per_neuron=1  # Each neuron must have at least one connection
@@ -55,7 +55,7 @@ model = ConnectivityEQLModel(
 # Train all valid architectures
 best_model, best_loss, best_architecture = model.train_all_architectures(
     train_loader,
-    num_epochs=100,
+    num_epochs=1500,
     max_architectures=10,  # Limit to 10 architectures
     max_patterns_per_layer= 10  # Limit to 5 patterns per layer
 )

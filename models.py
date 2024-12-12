@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 
 import sympy
-from custom_functions import SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
+from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
 
 def train_eql_model(model, train_loader, num_epochs, learning_rate=0.001,
                     reg_strength=1e-3, threshold=0.1):
@@ -98,7 +98,7 @@ class EQLModel(nn.Module):
                 self.sympy_funcs.append(sympy.sin)
             elif f == torch.cos:
                 self.sympy_funcs.append(sympy.cos)
-            elif isinstance(f, (SafeLog, SafeExp, SafeSin, SafePower)):
+            elif isinstance(f, (SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower)):
                 self.sympy_funcs.append(SYMPY_MAPPING[f.__class__])
             else:
                 raise ValueError(f"Unknown function type: {type(f)}")
@@ -113,8 +113,10 @@ class EQLModel(nn.Module):
         ]
         print(self.unary_functions)
 
-        self.unary_functions = [[5, 3], [3, 4]] # which unary functions to use per layer
-        
+        #self.unary_functions = [[0, 6], [5, 5]] # which unary functions to use per layer
+        self.unary_functions = [[6]] # this is the power function
+        self.unary_functions = [[3]] # this is the log function
+
         # Build layers
         self.layers = nn.ModuleList()
         inp_size = input_size
@@ -190,7 +192,7 @@ class EQLModel(nn.Module):
             
             # Apply nonlinear transformations
             u, v = layer.node_info
-            Y = sp.zeros(sum(self.hidden_dim[i]) + v, 1)
+            Y = sp.zeros(u + v, 1)
             
             # Initialize the starting index for Y
             current_index = 0
@@ -199,7 +201,7 @@ class EQLModel(nn.Module):
             for j in range(u):
                 func_idx = layer.unary_funcs[j]
                 # Loop through the number of nodes for the current unary function
-                for k in range(self.hidden_dim[i][j]):
+                for k in range(1):
                     Y[current_index, 0] = self.sympy_funcs[func_idx](X[current_index, 0])  # Use sympy function
                     current_index += 1  # Move to the next index in Y
             
@@ -311,7 +313,7 @@ class ConnectivityEQLModel(EQLModel):
                 return False
                 
             # Check target layer connections
-            target_connections = [sum(matrix[i][j] for i in range(m)) for j in range(n)]
+            target_connections = [sum(matrix[i][j] for i in range(n)) for j in range(m)]
             if any(conn < min_connections for conn in target_connections):
                 return False
                 
@@ -323,15 +325,15 @@ class ConnectivityEQLModel(EQLModel):
             # Generate all possible ways to place 'edges' connections
             for combination in itertools.combinations(range(m * n), edges):
                 # Create matrix representation
-                matrix = [[0] * n for _ in range(m)]
+                matrix = [[0] * m for _ in range(n)]
                 for idx in combination:
-                    i, j = idx // n, idx % n
+                    i, j = idx // m, idx % m
                     matrix[i][j] = 1
                     
                 # Check if pattern is valid
                 if is_valid_pattern(matrix):
                     patterns.append(matrix)
-                    
+        print(patterns)            
         return patterns
 
     def get_layer_sizes(self):
@@ -479,7 +481,8 @@ class ConnectivityEQLModel(EQLModel):
             
             avg_loss = total_loss / len(train_loader)
             print(f"Architecture {arch_idx + 1} - Average Loss: {avg_loss:.6f}")
-            
+
+            print(self.get_equation())
             if avg_loss < best_loss:
                 best_loss = avg_loss
                 best_model = self.state_dict()
