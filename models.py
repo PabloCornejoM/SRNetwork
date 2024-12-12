@@ -113,10 +113,11 @@ class EQLModel(nn.Module):
         ]
         print(self.unary_functions)
 
+        print("Were changing the unary functions here")
         #self.unary_functions = [[0, 6], [5, 5]] # which unary functions to use per layer
         self.unary_functions = [[6]] # this is the power function
-        self.unary_functions = [[3]] # this is the log function
-
+        #self.unary_functions = [[3]] # this is the log function
+        #self.unary_functions = [[5]]
         # Build layers
         self.layers = nn.ModuleList()
         inp_size = input_size
@@ -200,14 +201,27 @@ class EQLModel(nn.Module):
             # Apply unary functions
             for j in range(u):
                 func_idx = layer.unary_funcs[j]
-                # Loop through the number of nodes for the current unary function
-                for k in range(1):
-                    Y[current_index, 0] = self.sympy_funcs[func_idx](X[current_index, 0])  # Use sympy function
-                    current_index += 1  # Move to the next index in Y
+                # Special handling for power function
+                if isinstance(self.torch_funcs[func_idx], SafePower):
+                    # Get the power function parameters
+                    power_func = layer.hyp_set[func_idx]
+                    weight = float(power_func.weight.data[0])  # Get the exponent
+                    sign_param = float(power_func.sign_params.data[0])  # Get the sign parameter
+                    
+                    # Create the power expression based on the sign parameter
+                    x_term = X[current_index, 0]
+                    if sign_param > 0.5:  # even power behavior
+                        Y[current_index, 0] = sp.Abs(x_term)**weight
+                    else:  # odd power behavior
+                        Y[current_index, 0] = sp.sign(x_term) * (sp.Abs(x_term)**weight)
+                else:
+                    # Regular function handling
+                    Y[current_index, 0] = self.sympy_funcs[func_idx](X[current_index, 0])
+                current_index += 1
             
             # Apply binary functions (products)
             for j in range(v):
-                Y[j + u, 0] = X[u + 2 * j, 0] * X[u + 2 * j + 1, 0]  # Ensure correct access to X
+                Y[j + u, 0] = X[u + 2 * j, 0] * X[u + 2 * j + 1, 0]
             
             X = Y
         
@@ -217,6 +231,10 @@ class EQLModel(nn.Module):
         W_sp = sp.Matrix(W)
         b_sp = sp.Matrix(b)
         X = W_sp * X + b_sp
+        
+        # Simplify the expressions
+        for i in range(X.cols):
+            X[0, i] = sp.simplify(X[0, i])
         
         print("Learned Equation:")
         for i in range(X.cols):
@@ -284,7 +302,6 @@ class ConnectivityEQLModel(EQLModel):
         super(ConnectivityEQLModel, self).__init__(
             input_size=input_size,
             output_size=output_size,
-            #hidden_dim=hidden_dim,
             num_layers=num_layers,
             hyp_set=hyp_set,
             nonlinear_info=nonlinear_info,
@@ -422,11 +439,162 @@ class ConnectivityEQLModel(EQLModel):
             init_stddev=stddev
         )
 
+    def get_trainable_parameters(self):
+        """Get all trainable parameters as a flat numpy array."""
+        params = []
+        for layer in self.layers:
+            # Get weights and biases that are actually connected (not masked out)
+            if hasattr(layer, 'connectivity_mask'):
+                params.extend((layer.W * layer.connectivity_mask).data.flatten().tolist())
+            else:
+                params.extend(layer.W.data.flatten().tolist())
+            params.extend(layer.b.data.flatten().tolist())
+            
+            # Get parameters of custom functions if they exist
+            if hasattr(layer, 'hyp_set'):
+                for func in layer.hyp_set:
+                    if hasattr(func, 'parameters'):
+                        for param in func.parameters():
+                            params.extend(param.data.flatten().tolist())
+        
+        # Output layer parameters
+        if hasattr(self.output_layer, 'connectivity_mask'):
+            params.extend((self.output_layer.W * self.output_layer.connectivity_mask).data.flatten().tolist())
+        else:
+            params.extend(self.output_layer.W.data.flatten().tolist())
+        params.extend(self.output_layer.b.data.flatten().tolist())
+        
+        return np.array(params)
+
+    def set_trainable_parameters(self, params):
+        """Set all trainable parameters from a flat numpy array."""
+        with torch.no_grad():
+            param_idx = 0
+            
+            # Set parameters for each layer
+            for layer in self.layers:
+                # Set weights and biases
+                if hasattr(layer, 'connectivity_mask'):
+                    mask = layer.connectivity_mask
+                    num_weights = int(mask.sum().item())
+                    connected_indices = torch.nonzero(mask.flatten()).squeeze()
+                    layer.W.data.flatten()[connected_indices] = torch.tensor(
+                        params[param_idx:param_idx + num_weights],
+                        dtype=torch.float32
+                    )
+                    param_idx += num_weights
+                else:
+                    num_weights = layer.W.numel()
+                    layer.W.data = torch.tensor(
+                        params[param_idx:param_idx + num_weights],
+                        dtype=torch.float32
+                    ).reshape(layer.W.shape)
+                    param_idx += num_weights
+                
+                num_biases = layer.b.numel()
+                layer.b.data = torch.tensor(
+                    params[param_idx:param_idx + num_biases],
+                    dtype=torch.float32
+                ).reshape(layer.b.shape)
+                param_idx += num_biases
+                
+                # Set parameters of custom functions if they exist
+                if hasattr(layer, 'hyp_set'):
+                    for func in layer.hyp_set:
+                        if hasattr(func, 'parameters'):
+                            for param in func.parameters():
+                                num_params = param.numel()
+                                param.data = torch.tensor(
+                                    params[param_idx:param_idx + num_params],
+                                    dtype=torch.float32
+                                ).reshape(param.shape)
+                                param_idx += num_params
+            
+            # Set output layer parameters
+            if hasattr(self.output_layer, 'connectivity_mask'):
+                mask = self.output_layer.connectivity_mask
+                num_weights = int(mask.sum().item())
+                connected_indices = torch.nonzero(mask.flatten()).squeeze()
+                self.output_layer.W.data.flatten()[connected_indices] = torch.tensor(
+                    params[param_idx:param_idx + num_weights],
+                    dtype=torch.float32
+                )
+                param_idx += num_weights
+            else:
+                num_weights = self.output_layer.W.numel()
+                self.output_layer.W.data = torch.tensor(
+                    params[param_idx:param_idx + num_weights],
+                    dtype=torch.float32
+                ).reshape(self.output_layer.W.shape)
+                param_idx += num_weights
+            
+            num_biases = self.output_layer.b.numel()
+            self.output_layer.b.data = torch.tensor(
+                params[param_idx:param_idx + num_biases],
+                dtype=torch.float32
+            ).reshape(self.output_layer.b.shape)
+
+    def optimize_parameters(self, x_data, y_data, method='Nelder-Mead', options=None):
+        """
+        Optimize model parameters using scipy.optimize.
+        
+        Args:
+            x_data: Input data as numpy array or torch tensor
+            y_data: Target data as numpy array or torch tensor
+            method: Optimization method for scipy.optimize.minimize
+            options: Dictionary of options for the optimizer
+            
+        Returns:
+            OptimizeResult object from scipy.optimize
+        """
+        from scipy.optimize import minimize
+        
+        # Convert data to numpy if needed
+        if torch.is_tensor(x_data):
+            x_data = x_data.detach().numpy()
+        if torch.is_tensor(y_data):
+            y_data = y_data.detach().numpy()
+            
+        def loss_function(params):
+            """Compute MSE loss for given parameters."""
+            self.set_trainable_parameters(params)
+            with torch.no_grad():
+                x_tensor = torch.tensor(x_data, dtype=torch.float32)
+                y_pred = self(x_tensor)
+                y_pred = y_pred.detach().numpy()
+                return np.mean((y_data - y_pred) ** 2)
+        
+        # Get initial parameters
+        initial_params = self.get_trainable_parameters()
+        
+        # Set default options if none provided
+        if options is None:
+            options = {
+                'maxiter': 1000,
+                'disp': True,
+                'adaptive': True
+            }
+        
+        # Run optimization
+        result = minimize(
+            loss_function,
+            initial_params,
+            method=method,
+            options=options
+        )
+        
+        # Update model with best parameters
+        self.set_trainable_parameters(result.x)
+        
+        return result
+
     def train_all_architectures(self, train_loader, num_epochs, learning_rate=0.001,
                               reg_strength=1e-3, threshold=0.1, max_architectures=None,
-                              max_patterns_per_layer=None):
+                              max_patterns_per_layer=None, optimize_final=True,
+                              optimization_method='Nelder-Mead', optimization_options=None):
         """
         Train all valid architectures and return the best performing one.
+        Now includes parameter optimization after PyTorch training.
         
         Args:
             train_loader: PyTorch DataLoader containing training data
@@ -436,11 +604,15 @@ class ConnectivityEQLModel(EQLModel):
             threshold: Threshold for weight trimming
             max_architectures: Maximum number of architectures to try
             max_patterns_per_layer: Maximum number of patterns to consider per layer
+            optimize_final: Whether to perform final parameter optimization
+            optimization_method: Method to use for scipy.optimize.minimize
+            optimization_options: Options for the optimizer
             
         Returns:
             best_model: The best performing model
             best_loss: The loss of the best model
             best_architecture: The connectivity pattern of the best model
+            optimization_result: Result of parameter optimization (if performed)
         """
         architectures = self.get_all_valid_architectures(max_patterns_per_layer)
         if max_architectures is not None:
@@ -456,10 +628,8 @@ class ConnectivityEQLModel(EQLModel):
         for arch_idx, architecture in enumerate(architectures):
             print(f"\nTraining architecture {arch_idx + 1}/{len(architectures)}")
             
-            # Build model with current architecture
+            # Build and train model
             self.build_with_connectivity(architecture)
-            
-            # Train the model
             train_eql_model(
                 self, 
                 train_loader, 
@@ -469,7 +639,7 @@ class ConnectivityEQLModel(EQLModel):
                 threshold
             )
             
-            # Evaluate the model
+            # Evaluate
             self.eval()
             total_loss = 0
             criterion = nn.MSELoss()
@@ -481,17 +651,40 @@ class ConnectivityEQLModel(EQLModel):
             
             avg_loss = total_loss / len(train_loader)
             print(f"Architecture {arch_idx + 1} - Average Loss: {avg_loss:.6f}")
-
-            print(self.get_equation())
+            
             if avg_loss < best_loss:
                 best_loss = avg_loss
                 best_model = self.state_dict()
                 best_architecture = architecture
-                
+        
         # Load the best model
         self.load_state_dict(best_model)
-        return self, best_loss, best_architecture
+        print("Best model equation before optimization:")
+        print(self.get_equation())
         
+        # Perform final parameter optimization if requested
+        optimization_result = None
+        if optimize_final:
+            print("\nPerforming final parameter optimization...")
+            # Collect all data from the DataLoader
+            x_data, y_data = [], []
+            for data, target in train_loader:
+                x_data.append(data)
+                y_data.append(target)
+            x_data = torch.cat(x_data, dim=0)
+            y_data = torch.cat(y_data, dim=0)
+            
+            # Run optimization
+            optimization_result = self.optimize_parameters(
+                x_data, y_data,
+                method=optimization_method,
+                options=optimization_options
+            )
+            print("Parameter optimization complete.")
+            print(f"Final loss: {optimization_result.fun:.6f}")
+        
+        return self, best_loss, best_architecture, optimization_result
+
     def __str__(self):
         """Print a structured representation of the model with connectivity information."""
         model_str = super(ConnectivityEQLModel, self).__str__()

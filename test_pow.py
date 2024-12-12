@@ -45,32 +45,38 @@ train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 model = ConnectivityEQLModel(
     input_size=1,
     output_size=1,
-    #hidden_dim=[2, 2],  # Two hidden layers with 2 neurons each
     num_layers=num_layers,
     hyp_set=hyp_set,
     nonlinear_info=nonlinear_info,
-    min_connections_per_neuron=1  # Each neuron must have at least one connection
+    min_connections_per_neuron=1
 )
 
-# Train all valid architectures
-best_model, best_loss, best_architecture = model.train_all_architectures(
+# Train with parameter optimization
+best_model, best_loss, best_architecture, opt_result = model.train_all_architectures(
     train_loader,
-    num_epochs=1500,
-    max_architectures=10,  # Limit to 10 architectures
-    max_patterns_per_layer= 10  # Limit to 5 patterns per layer
+    num_epochs=500,
+    max_architectures=10,
+    optimize_final=True,  # Enable parameter optimization
+    optimization_method='Powell',
+    optimization_options={
+        'maxiter': 1000,
+        'disp': True,
+        'adaptive': True,
+        'xatol': 1e-8,
+        'fatol': 1e-8
+    }
 )
+
+# Print optimization results
+print(f"Final loss: {opt_result.fun}")
+print(f"Success: {opt_result.success}")
+print(f"Number of iterations: {opt_result.nit}")
 
 # Print the best architecture
 print(best_model)
 
 #print(model)
 equation = best_model.get_equation()
-
-# Training parameters
-num_epochs = 1000  # Total epochs (matches the three phases: 25% + 70% + 5%)
-learning_rate = 0.001
-reg_strength = 1e-3
-threshold = 0.1
 
 # Evaluate and plot results
 model.eval()
