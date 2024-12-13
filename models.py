@@ -117,7 +117,7 @@ class EQLModel(nn.Module):
         #self.unary_functions = [[0, 6], [5, 5]] # which unary functions to use per layer
         self.unary_functions = [[6]] # this is the power function
         #self.unary_functions = [[3]] # this is the log function
-        #self.unary_functions = [[5]]
+        #self.unary_functions = [[5]] # this is the sin function
         # Build layers
         self.layers = nn.ModuleList()
         inp_size = input_size

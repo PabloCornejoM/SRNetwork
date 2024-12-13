@@ -54,7 +54,7 @@ model = ConnectivityEQLModel(
 # Train with parameter optimization
 best_model, best_loss, best_architecture, opt_result = model.train_all_architectures(
     train_loader,
-    num_epochs=500,
+    num_epochs=100,
     max_architectures=10,
     optimize_final=True,  # Enable parameter optimization
     optimization_method='Powell',
