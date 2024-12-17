@@ -114,6 +114,7 @@ class SafePower(BaseSafeFunction):
         super().__init__("power", "pow")
         self.hardsigmoid = nn.Hardsigmoid()
         self.sign_params = None
+        self.count = -3
 
     def init_parameters(self, input_size, output_size):
         """Initialize parameters for EQL layer integration"""
@@ -121,32 +122,59 @@ class SafePower(BaseSafeFunction):
         self.bias = nn.Parameter(torch.zeros(output_size))
         self.sign_params = nn.Parameter(torch.zeros(output_size))
         
-        # Initialize exponents between 1 and 3
-        nn.init.uniform_(self.weight, 1.0, 3.0)
+        # Initialize exponents between 1 and 6
+        nn.init.uniform_(self.weight, 1+self.count, 1+self.count)
+        self.count += 1
         nn.init.zeros_(self.bias)
         nn.init.zeros_(self.sign_params)
 
-    def forward(self, x):
-        # Handle signs
-        input_signs = torch.sign(x)
+    def forward(self, x, weight, sign_param):
+        """
+        Compute the forward pass for a learned power function: x^w.
+        We blend between even and odd symmetry based on a learned 'sign_param'.
+        
+        Even function form: f(x) = exp(w * ln(|x|))
+        Odd function form:  f(x) = sign(x) * exp(w * ln(|x|))
+        
+        Parameters:
+        x          : Input tensor of shape (N, D)
+        weight     : Learnable parameter for exponent, shape (out_dim, D)
+        sign_param : Parameter controlling symmetry. After training:
+                    sign_param > 0.5 => even function
+                    sign_param <= 0.5 => odd function
+        """
+
+        # Ensure input magnitude is never zero (to avoid log(0))
         x_abs = torch.clamp(torch.abs(x), min=1e-7)
-        
-        # Compute power using log-exp trick for numerical stability
+        input_signs = torch.sign(x)
+
+        # Compute x^w using log-exp for stability:
+        # log_x = ln(|x|)
         log_x = torch.log(x_abs)
-        power_result = torch.exp(torch.matmul(log_x, self.weight.t()))
+        # power_result = exp(log_x * w), where w is from 'weight'
+        # log_x: (N, D), weight: (out_dim, D), we do log_x @ weight.t(): (N, out_dim)
+        power_result = torch.exp(log_x @ weight.t())  # shape: (N, out_dim)
+
+        # Obtain a continuous factor from sign_param
+        sign_factor = self.hardsigmoid(sign_param)  # in range [0,1]
         
-        # Determine output sign based on input sign and learned sign behavior
-        sign_factors = self.hardsigmoid(self.sign_params)  # Shape: scalar or (1)
+        # During evaluation, we turn it into a hard binary decision:
+        # >0.5 => even function, <=0.5 => odd function
         if not self.training:
-            sign_factors = (sign_factors > 0.5).float()
-        
-        # Compute the sign tensor similar to the first function
-        sign = torch.ones_like(input_signs) * sign_factors + input_signs * (1 - sign_factors)  # Shape: (n, d)
-        sign = torch.prod(sign, dim=1, keepdim=True)  # Shape: (n, 1)
-        
-        # Multiply the sign with the power result
-        power_out = sign * power_result + self.bias  # Shapes: (n, 1) * (n, output_dim) => (n, output_dim)
-        
+            sign_factor = (sign_factor > 0.5).float()
+
+        # sign_factor now represents how "even" we are:
+        # If fully even (sign_factor=1): final_sign = 1
+        # If fully odd (sign_factor=0): final_sign = sign(x)
+        # If in between, we get a smooth mixture during training.
+        final_sign = sign_factor * torch.ones_like(input_signs) + (1 - sign_factor) * input_signs
+
+        # Compute final output
+        # When even: f(x)=exp(w*ln|x|)
+        # When odd:  f(x)=sign(x)*exp(w*ln|x|)
+        # Mixture during training: a continuous blend.
+        power_out = final_sign * power_result.unsqueeze(1) + self.bias
+
         return power_out
 
     def clip_parameters(self):
@@ -154,10 +182,12 @@ class SafePower(BaseSafeFunction):
         with torch.no_grad():
             self.weight.data.clamp_(-4.0, 6.0)
 
-    def get_sympy_expression(self, x, weight, sign):
+    def get_sympy_expression(self, x):
         """Helper method to generate sympy expression for symbolic representation"""
         # Create a power expression with the weight as the exponent
         # and handle the sign based on the sign parameter
+        weight = self.weight.data[0].item()
+        sign = self.sign_params.data[0].item()
         if sign > 0.5:  # even power behavior
             return f"{sympy.Abs(x)}^{weight}"
         else:  # odd power behavior

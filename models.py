@@ -51,9 +51,11 @@ def train_epoch(model, train_loader, optimizer, criterion, reg_strength):
     """Train for one epoch."""
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
+        model.get_equation()
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
+        print(loss)
         
         # Add L1 regularization
         if reg_strength > 0:
@@ -115,9 +117,11 @@ class EQLModel(nn.Module):
 
         print("Were changing the unary functions here")
         #self.unary_functions = [[0, 6], [5, 5]] # which unary functions to use per layer
-        self.unary_functions = [[6]] # this is the power function
+        #self.unary_functions = [[6, 6, 6]]
+        #self.unary_functions = [[5, 5]] # this is the power function
+        # self.unary_functions = [[6]] # this is the power function
         #self.unary_functions = [[3]] # this is the log function
-        #self.unary_functions = [[5]] # this is the sin function
+        self.unary_functions = [[5]] # this is the sin function
         # Build layers
         self.layers = nn.ModuleList()
         inp_size = input_size
@@ -131,6 +135,8 @@ class EQLModel(nn.Module):
             # Calculate standard deviation for weight initialization
             stddev = np.sqrt(1.0 / (inp_size * out_size))
             #agregar el tema de diemnsion para una f2
+            
+            
             
             # Add EQL layer
             layer = EqlLayer(
@@ -173,7 +179,7 @@ class EQLModel(nn.Module):
         return x
 
     def get_equation(self):
-        """Prints learned equation of a trained model."""
+        """Prints learned equation of a model."""
         import sympy as sp
         
         # Create symbolic variables for inputs
@@ -185,11 +191,12 @@ class EQLModel(nn.Module):
             # Get weights and biases with masks applied
             W = layer.W.detach().numpy() * layer.W_mask.detach().numpy()
             b = layer.b.detach().numpy() * layer.b_mask.detach().numpy()
-            
-            # Linear transformation
-            W_sp = sp.Matrix(W)
-            b_sp = sp.Matrix(b)
-            X = W_sp * X + b_sp
+            try:
+                sign_params = layer.sign_params.detach().numpy()
+            except:
+                sign_params = None
+
+            function_classes = layer.function_classes
             
             # Apply nonlinear transformations
             u, v = layer.node_info
@@ -200,23 +207,31 @@ class EQLModel(nn.Module):
 
             # Apply unary functions
             for j in range(u):
-                func_idx = layer.unary_funcs[j]
+                func = function_classes[j]
                 # Special handling for power function
-                if isinstance(self.torch_funcs[func_idx], SafePower):
+                if isinstance(func, SafePower):
                     # Get the power function parameters
-                    power_func = layer.hyp_set[func_idx]
-                    weight = float(power_func.weight.data[0])  # Get the exponent
-                    sign_param = float(power_func.sign_params.data[0])  # Get the sign parameter
+                    #power_func = layer.hyp_set[func_idx]
+                    #weight = float(power_func.weight.data[0])  # Get the exponent
+                    #weight = float(layer.W[current_index, 0])
+                    #sign_param = float(layer.sign_params[current_index])  # Get the sign parameter
                     
-                    # Create the power expression based on the sign parameter
-                    x_term = X[current_index, 0]
-                    if sign_param > 0.5:  # even power behavior
-                        Y[current_index, 0] = sp.Abs(x_term)**weight
+                    # Round the exponent to 5 decimal places
+                    #weight = round(weight, 5)
+                    
+                    # For power function, apply directly to input X without linear transformation
+                    x_term = X[0, 0]  # Use original input
+                    if sign_params[current_index] > 0.5:  # even power behavior
+                        Y[current_index, 0] = sp.Abs(x_term)**W[current_index]
                     else:  # odd power behavior
-                        Y[current_index, 0] = sp.sign(x_term) * (sp.Abs(x_term)**weight)
+                        Y[current_index, 0] = sp.sign(x_term) * (sp.Abs(x_term)**W[current_index])
+                    #Y[current_index, 0] = func.get_sympy_expression(x_term)
                 else:
-                    # Regular function handling
-                    Y[current_index, 0] = self.sympy_funcs[func_idx](X[current_index, 0])
+                    func_idx = layer.unary_funcs[j]
+                    # For other functions, apply linear transformation first
+                    x_term = sum(W[current_index, k] * X[k, 0] for k in range(X.rows)) + b[current_index]
+                    # Then apply the function
+                    Y[current_index, 0] = self.sympy_funcs[func_idx](x_term)
                 current_index += 1
             
             # Apply binary functions (products)
@@ -228,13 +243,26 @@ class EQLModel(nn.Module):
         # Final layer
         W = self.output_layer.W.detach().numpy() * self.output_layer.W_mask.detach().numpy()
         b = self.output_layer.b.detach().numpy() * self.output_layer.b_mask.detach().numpy()
+        
+        # For power functions, we only need to apply the scaling from the output layer
+        if isinstance(self.torch_funcs[self.unary_functions[0][0]], SafePower):
+            # Use only significant coefficients
+            W = np.where(np.abs(W) > 1e-5, W, 0)
+            b = np.where(np.abs(b) > 1e-5, b, 0)
+        
         W_sp = sp.Matrix(W)
         b_sp = sp.Matrix(b)
         X = W_sp * X + b_sp
         
         # Simplify the expressions
         for i in range(X.cols):
-            X[0, i] = sp.simplify(X[0, i])
+            expr = X[0, i]
+            # Round numerical coefficients only if they are numbers
+            expr = expr.xreplace({n: round(float(n), 5) for n in expr.atoms(sp.Number) if n.is_real})
+            # Remove very small terms
+            expr = expr.xreplace({t: 0 for t in expr.atoms(sp.Add) if t.is_real and abs(float(t.evalf())) < 1e-5})
+            # Final simplification
+            X[0, i] = sp.simplify(expr)
         
         print("Learned Equation:")
         for i in range(X.cols):
@@ -630,6 +658,7 @@ class ConnectivityEQLModel(EQLModel):
             
             # Build and train model
             self.build_with_connectivity(architecture)
+            self.get_equation()
             train_eql_model(
                 self, 
                 train_loader, 

@@ -27,7 +27,7 @@ class Connected(nn.Module):
         # Weight and bias parameters
         self.W = nn.Parameter(torch.Tensor(output_size, input_size))
         self.b = nn.Parameter(torch.Tensor(output_size))
-
+        self.sign_params = nn.Parameter(torch.Tensor(output_size))
         # Initialize weights and biases
         self.reset_parameters()
 
@@ -61,9 +61,14 @@ class Connected(nn.Module):
                     # Copy the initialized parameters to the corresponding segment
                 self.W.data[current_index:current_index + 1] = func_instance.weight.data
                 self.b.data[current_index:current_index + 1] = func_instance.bias.data
+                try:
+                    self.sign_params.data[current_index:current_index + 1] = func_instance.sign_params.data
+                except:
+                    pass
                 current_index += 1
         elif self.init_stddev is not None:
             nn.init.normal_(self.W, std=self.init_stddev)
+            self.W.data.fill_(1)
             nn.init.zeros_(self.b)
         else:
             nn.init.kaiming_normal_(self.W, nonlinearity='linear')
@@ -112,9 +117,9 @@ class EqlLayer(Connected):
         output_size = u + 2 * v
         
         # Get the function classes from hyp_set based on unary_funcs indices
-        function_classes = []
+        self.function_classes = []
         for func_idx in unary_funcs:
-            function_classes.append(hyp_set[func_idx])
+            self.function_classes.append(hyp_set[func_idx])
             #if inspect.isclass(hyp_set[func_idx]):  # Check if it's a class
                 #function_classes.append(hyp_set[func_idx])
             #else:
@@ -125,7 +130,7 @@ class EqlLayer(Connected):
             init_stddev=init_stddev,
             regularization=regularization,
             #hidden_dim=hidden_dim,
-            function_classes=function_classes
+            function_classes=self.function_classes
         )
         self.node_info = node_info
         self.hyp_set = hyp_set
@@ -149,7 +154,8 @@ class EqlLayer(Connected):
             
             if isinstance(func, SafePower):
                 # Special handling for SafePower
-                segment_output = func(x)  # Pass raw input x instead of transformed
+                print("self.sign_params", self.sign_params)
+                segment_output = func(x, self.W[current_index], self.sign_params[current_index])  # Pass raw input x instead of transformed
                 outputs.append(segment_output)
             else:
                 # Regular handling for other functions

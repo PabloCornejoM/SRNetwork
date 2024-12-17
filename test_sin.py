@@ -28,7 +28,7 @@ nonlinear_info = [ # it is the number of neurons in each layer
 ]
 
 # Create synthetic data
-x_values = np.linspace(0.1, 10, 5000)
+x_values = np.linspace(-1, 1, 1000)
 y_values = np.sin(x_values) # Example function: y = x^2
 
 # Convert to PyTorch tensors

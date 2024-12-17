@@ -23,7 +23,7 @@ output_size = 1
 hidden_dim = [[2], []] # it is the output size of each neurons in each layer
 num_layers = 2 # hidden + 1 output
 nonlinear_info = [ # it is the number of neurons in each layer
-    (2, 0),  # Layer 1: 4 unary, 4 binary functions
+    (3, 0),  # Layer 1: 4 unary, 4 binary functions
     (2, 0),  # Layer 2
     (0, 0)   # Layer 3
 ]
