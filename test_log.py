@@ -29,8 +29,8 @@ nonlinear_info = [ # it is the number of neurons in each layer
 ]
 
 # Create synthetic data
-x_values = np.linspace(0.01, 2, 5000)
-y_values = np.log(x_values) # Example function: y = x^2
+x_values = np.linspace(0.01, 2, 1000)
+y_values = -1.35* np.log(x_values) # Example function: y = x^2
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)

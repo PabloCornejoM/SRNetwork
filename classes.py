@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import inspect
 
-from custom_functions import SafePower  
+from custom_functions import SafePower, SafeIdentityFunction  
 
 class Connected(nn.Module):
     """
@@ -67,8 +67,9 @@ class Connected(nn.Module):
                     pass
                 current_index += 1
         elif self.init_stddev is not None:
-            nn.init.normal_(self.W, std=self.init_stddev)
+            #nn.init.normal_(self.W, std=self.init_stddev)
             self.W.data.fill_(1)
+            #nn.init.uniform_(self.W, a=0.0, b=1.0)  # Initialize W between 0 and 1
             nn.init.zeros_(self.b)
         else:
             nn.init.kaiming_normal_(self.W, nonlinearity='linear')
@@ -151,10 +152,14 @@ class EqlLayer(Connected):
         for i in range(u):
             func = self.hyp_set[self.unary_funcs[i]]
             num_nodes = 1
+
+            if isinstance(func, SafeIdentityFunction):
+                segment_output = func(x)  # Pass raw input x instead of transformed
+                outputs.append(segment_output)
             
-            if isinstance(func, SafePower):
+            elif isinstance(func, SafePower):
                 # Special handling for SafePower
-                print("self.sign_params", self.sign_params)
+                #print("self.sign_params", self.sign_params)
                 segment_output = func(x, self.W[current_index], self.sign_params[current_index])  # Pass raw input x instead of transformed
                 outputs.append(segment_output)
             else:

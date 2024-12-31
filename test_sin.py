@@ -3,7 +3,10 @@ import numpy as np
 from models import EQLModel, ConnectivityEQLModel
 from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
+from utils.tensorboard_logger import TensorBoardLogger
 
+# Initialize TensorBoard logger
+logger = TensorBoardLogger(log_dir='runs/sin_experiment')
 
 # Define the hypothesis set of unary functions
 hyp_set = [
@@ -29,7 +32,7 @@ nonlinear_info = [ # it is the number of neurons in each layer
 
 # Create synthetic data
 x_values = np.linspace(-1, 1, 1000)
-y_values = np.sin(x_values) # Example function: y = x^2
+y_values = -np.sin(3.1415*x_values) # Example function: y = x^2
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)
@@ -47,7 +50,7 @@ model = ConnectivityEQLModel(
     num_layers=num_layers,
     hyp_set=hyp_set,
     nonlinear_info=nonlinear_info,
-    min_connections_per_neuron=1
+    min_connections_per_neuron=1,
 )
 
 # Train with parameter optimization
@@ -63,8 +66,14 @@ best_model, best_loss, best_architecture, opt_result = model.train_all_architect
         'adaptive': True,
         'xatol': 1e-8,
         'fatol': 1e-8
-    }
+    },
+    logger=logger  # Pass the logger to the training function
 )
+
+# Log final results
+logger.log_architecture(best_model, step=0)
+logger.log_weights(best_model, step=0)
+
 
 # Print optimization results
 print(f"Final loss: {opt_result.fun}")
@@ -82,6 +91,9 @@ model.eval()
 with torch.no_grad():
     predictions = model(X)
 
+# Log the final predictions plot
+logger.log_prediction_plot(x_values, y_values, predictions.numpy(), step=0)
+
 import matplotlib.pyplot as plt
 plt.figure(figsize=(10, 6))
 plt.plot(x_values, y_values, label='True Function (sin(x))')
@@ -95,3 +107,6 @@ plt.show()
 
 # Print learned equation
 equation = model.get_equation()
+
+# Close the logger
+logger.close()

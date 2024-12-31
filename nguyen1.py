@@ -29,7 +29,7 @@ nonlinear_info = [ # it is the number of neurons in each layer
 ]
 
 # Create synthetic data
-x_values = np.linspace(-10, 10, 1000)
+x_values = np.linspace(0.01, 2, 1000)
 y_values = x_values + x_values**2 + x_values**3 # Example function: y = x^2
 
 # Convert to PyTorch tensors
@@ -59,7 +59,7 @@ best_model, best_loss, best_architecture, opt_result = model.train_all_architect
     num_epochs=100,
     max_architectures=10,
     optimize_final=True,  # Enable parameter optimization
-    optimization_method='BFGS',
+    optimization_method='Nelder-Mead',
     optimization_options={
         'maxiter': 1000,
         'disp': True,

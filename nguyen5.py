@@ -21,16 +21,16 @@ hyp_set = [
 input_size = 1
 output_size = 1
 hidden_dim = [[2], []] # it is the output size of each neurons in each layer
-num_layers = 2 # hidden + 1 output
+num_layers = 4 # hidden + 1 output
 nonlinear_info = [ # it is the number of neurons in each layer
-    (3, 0),  # Layer 1: 4 unary, 4 binary functions
-    (0, 0),  # Layer 2
-    (0, 0)   # Layer 3
+    (2, 0),  # Layer 1: 4 unary, 4 binary functions
+    (2, 0),  # Layer 2
+    (1, 1)   # Layer 3
 ]
 
 # Create synthetic data
 x_values = np.linspace(0, 1, 1000)
-y_values = x_values + x_values**2 + x_values**3 # Example function: y = x^2
+y_values = np.sin(x_values**2)* np.cos(x_values) - 1 # Example function: y = x^2
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)

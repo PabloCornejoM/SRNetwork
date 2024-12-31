@@ -13,7 +13,7 @@ import sympy
 from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
 
 def train_eql_model(model, train_loader, num_epochs, learning_rate=0.001,
-                    reg_strength=1e-3, threshold=0.1):
+                    reg_strength=1e-3, threshold=0.1, logger=None):
     """
     Train EQL model using the three-phase schedule from the paper.
     
@@ -32,30 +32,31 @@ def train_eql_model(model, train_loader, num_epochs, learning_rate=0.001,
     phase1_epochs = int(num_epochs * 0.25)
     print("Phase 1: Training without regularization")
     for epoch in range(phase1_epochs):
-        train_epoch(model, train_loader, optimizer, criterion, reg_strength=0.0)
+        train_epoch(model, train_loader, optimizer, criterion, reg_strength=0.0, epoch=epoch, num_epoch=phase1_epochs, logger=logger)
             
     # Phase 2: With regularization (7T/10)
     phase2_epochs = int(num_epochs * 0.7)
     print("Phase 2: Training with regularization")
     for epoch in range(phase2_epochs):
-        train_epoch(model, train_loader, optimizer, criterion, reg_strength=reg_strength)
+        train_epoch(model, train_loader, optimizer, criterion, reg_strength=reg_strength, epoch=epoch, num_epoch=phase2_epochs, logger=logger)
             
     # Phase 3: No regularization, with weight trimming (T/20)
     phase3_epochs = int(num_epochs * 0.05)
     print("Phase 3: Training with weight trimming")
     model.apply_weight_trimming(threshold)
     for epoch in range(phase3_epochs):
-        train_epoch(model, train_loader, optimizer, criterion, reg_strength=0.0)
+        train_epoch(model, train_loader, optimizer, criterion, reg_strength=0.0, epoch=epoch, num_epoch=phase3_epochs, logger=logger)
 
-def train_epoch(model, train_loader, optimizer, criterion, reg_strength):
+def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0, num_epoch=0, logger=None):
     """Train for one epoch."""
     model.train()
+    step = epoch * len(train_loader)  # Initialize step based on the current epoch
     for batch_idx, (data, target) in enumerate(train_loader):
-        model.get_equation()
+        #model.get_equation()
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
-        print(loss)
+        #print(loss)
         
         # Add L1 regularization
         if reg_strength > 0:
@@ -63,6 +64,11 @@ def train_epoch(model, train_loader, optimizer, criterion, reg_strength):
             
         loss.backward()
         optimizer.step()
+
+        if logger:
+            logger.log_gradients(model, step + batch_idx)  # Use step for logging gradients
+            logger.log_weights(model, step + batch_idx)     # Use step for logging weights
+            #logger.log_output(output, target, loss.item(), step + batch_idx)  # Pass step to log_output
 
 
 
@@ -116,10 +122,15 @@ class EQLModel(nn.Module):
         print(self.unary_functions)
 
         print("Were changing the unary functions here")
-        #self.unary_functions = [[0, 6], [5, 5]] # which unary functions to use per layer
-        #self.unary_functions = [[6, 6, 6]]
+        #self.unary_functions = [[6, 6, 6]] #n1
+        #self.unary_functions = [[6, 6, 6, 6]]
+        #self.unary_functions = [[0, 6], [5, 5]] # n6
+        #self.unary_functions = [[0, 6], [3, 3]] # n7
+        #self.unary_functions = [[6]] # n8
+        #self.unary_functions = [[0, 6], [5, 5]] # n9
+        
         #self.unary_functions = [[5, 5]] # this is the power function
-        # self.unary_functions = [[6]] # this is the power function
+        #self.unary_functions = [[6]] # this is the power function
         #self.unary_functions = [[3]] # this is the log function
         self.unary_functions = [[5]] # this is the sin function
         # Build layers
@@ -208,33 +219,23 @@ class EQLModel(nn.Module):
             # Apply unary functions
             for j in range(u):
                 func = function_classes[j]
-                # Special handling for power function
                 if isinstance(func, SafePower):
-                    # Get the power function parameters
-                    #power_func = layer.hyp_set[func_idx]
-                    #weight = float(power_func.weight.data[0])  # Get the exponent
-                    #weight = float(layer.W[current_index, 0])
-                    #sign_param = float(layer.sign_params[current_index])  # Get the sign parameter
-                    
-                    # Round the exponent to 5 decimal places
-                    #weight = round(weight, 5)
-                    
-                    # For power function, apply directly to input X without linear transformation
                     x_term = X[0, 0]  # Use original input
-                    if sign_params[current_index] > 0.5:  # even power behavior
+                    if sign_params[current_index] > 0.5:
                         Y[current_index, 0] = sp.Abs(x_term)**W[current_index]
-                    else:  # odd power behavior
+                    else:
                         Y[current_index, 0] = sp.sign(x_term) * (sp.Abs(x_term)**W[current_index])
-                    #Y[current_index, 0] = func.get_sympy_expression(x_term)
+                
+                elif isinstance(func, SafeIdentityFunction):
+                    x_term = X[0, 0]
+                    Y[current_index, 0] = x_term
                 else:
                     func_idx = layer.unary_funcs[j]
-                    # For other functions, apply linear transformation first
                     x_term = sum(W[current_index, k] * X[k, 0] for k in range(X.rows)) + b[current_index]
-                    # Then apply the function
                     Y[current_index, 0] = self.sympy_funcs[func_idx](x_term)
                 current_index += 1
             
-            # Apply binary functions (products)
+            # Apply binary functions
             for j in range(v):
                 Y[j + u, 0] = X[u + 2 * j, 0] * X[u + 2 * j + 1, 0]
             
@@ -244,9 +245,7 @@ class EQLModel(nn.Module):
         W = self.output_layer.W.detach().numpy() * self.output_layer.W_mask.detach().numpy()
         b = self.output_layer.b.detach().numpy() * self.output_layer.b_mask.detach().numpy()
         
-        # For power functions, we only need to apply the scaling from the output layer
         if isinstance(self.torch_funcs[self.unary_functions[0][0]], SafePower):
-            # Use only significant coefficients
             W = np.where(np.abs(W) > 1e-5, W, 0)
             b = np.where(np.abs(b) > 1e-5, b, 0)
         
@@ -257,18 +256,19 @@ class EQLModel(nn.Module):
         # Simplify the expressions
         for i in range(X.cols):
             expr = X[0, i]
-            # Round numerical coefficients only if they are numbers
-            expr = expr.xreplace({n: round(float(n), 5) for n in expr.atoms(sp.Number) if n.is_real})
-            # Remove very small terms
-            expr = expr.xreplace({t: 0 for t in expr.atoms(sp.Add) if t.is_real and abs(float(t.evalf())) < 1e-5})
-            # Final simplification
-            X[0, i] = sp.simplify(expr)
+            expr = expr.xreplace({n: round(n, 5) for n in expr.atoms(sp.Number) if n.is_real})
+            expr = expr.xreplace({t: 0 for t in expr.atoms(sp.Add) if t.is_real and abs((t.evalf())) < 1e-5})
+            try:
+                X[0, i] = sp.simplify(expr)
+            except:
+                X[0, i] = expr
         
+        # Convert to string for logging
+        equation_str = "\n".join([f"y{i+1} = {X[0, i]}" for i in range(X.cols)])
         print("Learned Equation:")
-        for i in range(X.cols):
-            print(f"y{i+1} = {X[0, i]}")
+        print(equation_str)
         
-        return X
+        return equation_str  # Return the string representation
 
     def l1_regularization(self):
         """Calculate L1 regularization loss for all layers."""
@@ -619,7 +619,7 @@ class ConnectivityEQLModel(EQLModel):
     def train_all_architectures(self, train_loader, num_epochs, learning_rate=0.001,
                               reg_strength=1e-3, threshold=0.1, max_architectures=None,
                               max_patterns_per_layer=None, optimize_final=True,
-                              optimization_method='Nelder-Mead', optimization_options=None):
+                              optimization_method='Nelder-Mead', optimization_options=None, logger=None):
         """
         Train all valid architectures and return the best performing one.
         Now includes parameter optimization after PyTorch training.
@@ -635,6 +635,7 @@ class ConnectivityEQLModel(EQLModel):
             optimize_final: Whether to perform final parameter optimization
             optimization_method: Method to use for scipy.optimize.minimize
             optimization_options: Options for the optimizer
+            logger: Logger object for logging
             
         Returns:
             best_model: The best performing model
@@ -654,6 +655,8 @@ class ConnectivityEQLModel(EQLModel):
         print(f"Training {len(architectures)} different architectures")
         
         for arch_idx, architecture in enumerate(architectures):
+            if arch_idx == 4:
+                print("5")
             print(f"\nTraining architecture {arch_idx + 1}/{len(architectures)}")
             
             # Build and train model
@@ -665,7 +668,8 @@ class ConnectivityEQLModel(EQLModel):
                 num_epochs, 
                 learning_rate,
                 reg_strength, 
-                threshold
+                threshold,
+                logger
             )
             
             # Evaluate
@@ -711,7 +715,15 @@ class ConnectivityEQLModel(EQLModel):
             )
             print("Parameter optimization complete.")
             print(f"Final loss: {optimization_result.fun:.6f}")
-        
+            
+            # Compare losses and decide whether to keep the optimized model
+            if optimization_result.fun < best_loss:
+                print("Optimized model has a lower loss. Keeping the optimized model.")
+                best_loss = optimization_result.fun  # Update best_loss to the optimized loss
+            else:
+                print("Best model loss is lower than the optimized model. Reverting to the best model.")
+                self.load_state_dict(best_model)  # Revert to the best model if optimization did not improve
+
         return self, best_loss, best_architecture, optimization_result
 
     def __str__(self):

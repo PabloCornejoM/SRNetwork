@@ -69,7 +69,7 @@ class SafeLog(BaseSafeFunction):
     def _init_weight_values(self):
         # Initialize with random signs as in your implementation
         signs = torch.where(
-            torch.rand_like(self.weight) > 0.5,
+            torch.rand_like(self.weight) > 0.0,
             torch.ones_like(self.weight),
             -torch.ones_like(self.weight)
         )
@@ -94,7 +94,8 @@ class SafeSin(BaseSafeFunction):
     
     def _init_weight_values(self):
         signs = torch.where(
-            torch.rand_like(self.weight) > 0.5,
+
+            torch.rand_like(self.weight) > 0,
             torch.ones_like(self.weight),
             -torch.ones_like(self.weight)
         )
@@ -114,7 +115,7 @@ class SafePower(BaseSafeFunction):
         super().__init__("power", "pow")
         self.hardsigmoid = nn.Hardsigmoid()
         self.sign_params = None
-        self.count = -3
+        self.count = 0
 
     def init_parameters(self, input_size, output_size):
         """Initialize parameters for EQL layer integration"""
@@ -123,8 +124,8 @@ class SafePower(BaseSafeFunction):
         self.sign_params = nn.Parameter(torch.zeros(output_size))
         
         # Initialize exponents between 1 and 6
-        nn.init.uniform_(self.weight, 1+self.count, 1+self.count)
-        self.count += 1
+        nn.init.uniform_(self.weight, 2+self.count, 2+self.count)
+        #self.count += 1
         nn.init.zeros_(self.bias)
         nn.init.zeros_(self.sign_params)
 

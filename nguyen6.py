@@ -21,16 +21,16 @@ hyp_set = [
 input_size = 1
 output_size = 1
 hidden_dim = [[2], []] # it is the output size of each neurons in each layer
-num_layers = 2 # hidden + 1 output
+num_layers = 3 # hidden + 1 output
 nonlinear_info = [ # it is the number of neurons in each layer
-    (3, 0),  # Layer 1: 4 unary, 4 binary functions
-    (0, 0),  # Layer 2
+    (2, 0),  # Layer 1: 4 unary, 4 binary functions
+    (2, 0),  # Layer 2
     (0, 0)   # Layer 3
 ]
 
 # Create synthetic data
 x_values = np.linspace(0, 1, 1000)
-y_values = x_values + x_values**2 + x_values**3 # Example function: y = x^2
+y_values = np.sin(x_values**2 + x_values) + np.sin(x_values)# Example function: y = x^2
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)
@@ -59,7 +59,7 @@ best_model, best_loss, best_architecture, opt_result = model.train_all_architect
     num_epochs=100,
     max_architectures=10,
     optimize_final=True,  # Enable parameter optimization
-    optimization_method='Powell',
+    optimization_method='Nelder-Mead',
     optimization_options={
         'maxiter': 1000,
         'disp': True,
