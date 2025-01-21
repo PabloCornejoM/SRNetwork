@@ -137,47 +137,28 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
         #train_epoch(model, train_loader, optimizer, criterion, reg_strength=0.0, epoch=epoch, num_epoch=phase3_epochs, logger=logger)
 
 def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0, num_epoch=0, logger=None):
-    """Train for one epoch with improved exploration-exploitation strategy."""
+    """Train for one epoch."""
     model.train()
     step = epoch * len(train_loader)
-    total_loss = 0
-    
-    # Dynamic learning rate scheduling based on training phase
-    '''if epoch < num_epoch * 0.7:  # Exploration phase
-        lr = 0.01
-    elif epoch < num_epoch * 0.9:  # Transition phase
-        lr = 0.1
-    elif epoch < num_epoch * 0.95:  # Initial exploitation phase
-        lr = 0.5
-    else:  # Final exploitation phase
-        lr = 1.0
-        
-    # Update learning rate
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr'''
     
     for batch_idx, (data, target) in enumerate(train_loader):
         optimizer.zero_grad()
         output = model(data)
         loss = criterion(output, target)
         
+        # Add L1 regularization
         if reg_strength > 0:
             l1_loss = reg_strength * model.l1_regularization()
             loss += l1_loss
             
         loss.backward()
-        
-        # Gradient clipping to prevent instability with high learning rates
-        #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        
         optimizer.step()
-        total_loss += loss.item()
+        #.item())
 
         if logger:
             metrics = {
                 "loss": loss.item(),
-                "learning_rate": lr,
-                "reg_strength": current_reg if reg_strength > 0 else 0
+                "learning_rate": optimizer.param_groups[0]['lr']
             }
             if reg_strength > 0:
                 metrics["l1_loss"] = l1_loss.item()
@@ -185,12 +166,12 @@ def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0
             logger.log_metrics(metrics, step + batch_idx)
             logger.log_gradients(model, step + batch_idx)
             logger.log_weights(model, step + batch_idx)
+            #logger.log_weights_comparison(model, step + batch_idx)
             
+            # Log equation periodically (e.g., every 100 steps)
             if (step + batch_idx) % 10000 == 0:
                 equation = model.get_equation()
                 logger.log_equation(equation, step + batch_idx)
-                
-    return total_loss / len(train_loader)
 
 
 
@@ -765,9 +746,30 @@ class ConnectivityEQLModel(EQLModel):
     def train_all_architectures(self, train_loader, val_loader, num_epochs, learning_rate=0.001,
                               reg_strength=1e-3, threshold=0.1, max_architectures=None,
                               max_patterns_per_layer=None, optimize_final=True,
-                              optimization_method='Powell', optimization_options=None, 
-                              num_parallel_trials=3, logger=None):
-        """Train multiple architectures with parallel exploration strategies."""
+                              optimization_method='Nelder-Mead', optimization_options=None, logger=None):
+        """
+        Train all valid architectures and return the best performing one.
+        Now includes parameter optimization after PyTorch training.
+        
+        Args:
+            train_loader: PyTorch DataLoader containing training data
+            num_epochs: Number of epochs to train each architecture
+            learning_rate: Learning rate for optimization
+            reg_strength: L1 regularization strength
+            threshold: Threshold for weight trimming
+            max_architectures: Maximum number of architectures to try
+            max_patterns_per_layer: Maximum number of patterns to consider per layer
+            optimize_final: Whether to perform final parameter optimization
+            optimization_method: Method to use for scipy.optimize.minimize
+            optimization_options: Options for the optimizer
+            logger: Logger object for logging
+            
+        Returns:
+            best_model: The best performing model
+            best_loss: The loss of the best model
+            best_architecture: The connectivity pattern of the best model
+            optimization_result: Result of parameter optimization (if performed)
+        """
         architectures = self.get_all_valid_architectures(max_patterns_per_layer)
         if max_architectures is not None:
             import random
@@ -776,86 +778,81 @@ class ConnectivityEQLModel(EQLModel):
         best_loss = float('inf')
         best_model = None
         best_architecture = None
-        best_optimization_result = None
         
         print(f"Training {len(architectures)} different architectures")
         
         for arch_idx, architecture in enumerate(architectures):
+            if arch_idx == 4:
+                print("5")
             print(f"\nTraining architecture {arch_idx + 1}/{len(architectures)}")
             
-            # Train multiple instances with different strategies
-            trial_results = []
-            for trial in range(num_parallel_trials):
-                # Build new model instance
-                self.build_with_connectivity(architecture)
-                
-                # Different learning rate strategies for each trial
-                if trial == 0:
-                    # Progressive LR strategy (as implemented in train_epoch)
-                    train_strategy = "progressive"
-                elif trial == 1:
-                    # Cyclic LR strategy
-                    optimizer = torch.optim.Adam(self.parameters())
-                    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 
-                    max_lr=1, epochs = num_epochs, steps_per_epoch=len(train_loader))
-
-                else:
-                    # Cosine annealing with warm restarts
-                    optimizer = torch.optim.Adam(self.parameters())
-                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-                        optimizer, T_0=num_epochs//3, T_mult=2, eta_min=0.001
-                    )
-                
-                # Train model
-                train_eql_model(
-                    self, 
-                    train_loader,
-                    val_loader,
-                    num_epochs,
-                    learning_rate,
-                    reg_strength,
-                    threshold,
-                    logger
-                )
-                
-                # Evaluate current model
-                self.eval()
-                current_loss = self.evaluate_model(val_loader)
-                
-                # Optimize parameters
-                if optimize_final:
-                    optimization_result = self.optimize_parameters(
-                        *self.get_all_data(train_loader),
-                        method=optimization_method,
-                        options=optimization_options
-                    )
-                    optimized_loss = optimization_result.fun
-
-                else:
-                    optimized_loss = current_loss
-                    optimization_result = None
-                
-                trial_results.append({
-                    'model_state': self.state_dict(),
-                    'loss': optimized_loss,
-                    'optimization_result': optimization_result
-                })
-                print(self.get_equation())
+            # Build and train model
+            self.build_with_connectivity(architecture)
+            self.get_equation()
+            train_eql_model(
+                self, 
+                train_loader,
+                val_loader,
+                num_epochs, 
+                learning_rate,
+                reg_strength, 
+                threshold,
+                logger
+            )
             
-            # Select best trial result
-            best_trial = min(trial_results, key=lambda x: x['loss'])
-
+            # Evaluate
+            self.eval()
+            total_loss = 0
+            criterion = nn.MSELoss()
+            with torch.no_grad():
+                for data, target in train_loader:
+                    output = self(data)
+                    loss = criterion(output, target)
+                    total_loss += loss.item()
             
-            if best_trial['loss'] < best_loss:
-                best_loss = best_trial['loss']
-                best_model = best_trial['model_state']
+            avg_loss = total_loss / len(train_loader)
+            print(f"Architecture {arch_idx + 1} - Average Loss: {avg_loss:.6f}")
+            
+            if avg_loss < best_loss:
+                best_loss = avg_loss
+                best_model = self.state_dict()
                 best_architecture = architecture
-                best_optimization_result = best_trial['optimization_result']
         
         # Load the best model
         self.load_state_dict(best_model)
+        print("Best model equation before optimization:")
+        print(self.get_equation())
         
-        return self, best_loss, best_architecture, best_optimization_result
+        # Perform final parameter optimization if requested
+        optimization_result = None
+        if optimize_final:
+            print("\nPerforming final parameter optimization...")
+            # Collect all data from the DataLoader
+            x_data, y_data = [], []
+            for data, target in train_loader:
+                x_data.append(data)
+                y_data.append(target)
+            x_data = torch.cat(x_data, dim=0)
+            y_data = torch.cat(y_data, dim=0)
+            
+            # Run optimization
+            optimization_result = self.optimize_parameters(
+                x_data, y_data,
+                method=optimization_method,
+                options=optimization_options
+            )
+            print("Parameter optimization complete.")
+            print(f"Final loss: {optimization_result.fun:.6f}")
+            
+            # Compare losses and decide whether to keep the optimized model
+            if optimization_result.fun < best_loss:
+                print("Optimized model has a lower loss. Keeping the optimized model.")
+                best_loss = optimization_result.fun  # Update best_loss to the optimized loss
+            else:
+                print("Best model loss is lower than the optimized model. Reverting to the best model.")
+                self.load_state_dict(best_model)  # Revert to the best model if optimization did not improve
+
+        return self, best_loss, best_architecture, optimization_result
 
     def __str__(self):
         """Print a structured representation of the model with connectivity information."""
@@ -1005,58 +1002,3 @@ class ConnectivityEQLModel(EQLModel):
             })
 
         return param_groups
-
-    def evaluate_model(self, val_loader):
-        """
-        Evaluate the model on a validation dataset.
-        
-        Args:
-            val_loader: PyTorch DataLoader containing validation data
-            
-        Returns:
-            float: Average loss (MSE) on the validation set
-        """
-        self.eval()  # Set model to evaluation mode
-        total_loss = 0.0
-        criterion = nn.MSELoss(reduction='sum')
-        
-        with torch.no_grad():  # Disable gradient computation
-            for data, target in val_loader:
-                # Forward pass
-                output = self(data)
-                # Compute loss
-                loss = criterion(output, target)
-                total_loss += loss.item()
-        
-        # Compute average loss
-        avg_loss = total_loss / len(val_loader.dataset)
-        
-        return avg_loss
-
-    def get_all_data(self, data_loader):
-        """
-        Extract all data from a DataLoader and return as input-output pairs.
-        
-        Args:
-            data_loader: PyTorch DataLoader containing the dataset
-            
-        Returns:
-            tuple: (x_data, y_data) where:
-                - x_data is a numpy array of input features
-                - y_data is a numpy array of target values
-        """
-        x_list = []
-        y_list = []
-        
-        # Iterate through the DataLoader
-        with torch.no_grad():
-            for inputs, targets in data_loader:
-                # Convert to numpy and store
-                x_list.append(inputs.numpy())
-                y_list.append(targets.numpy())
-        
-        # Concatenate all batches
-        x_data = np.concatenate(x_list, axis=0)
-        y_data = np.concatenate(y_list, axis=0)
-        
-        return x_data, y_data

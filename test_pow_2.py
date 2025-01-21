@@ -28,18 +28,31 @@ nonlinear_info = [ # it is the number of neurons in each layer
     (0, 0)   # Layer 3
 ]
 
-# Create synthetic data
-x_values = np.linspace(0, 1, 1000)
-y_values = x_values + x_values**2 + x_values**3 # Example function: y = x^2
+# Create synthetic data with random points in the interval
+num_samples = 1000
+x_values = np.linspace(-1, 1, num_samples)
+y_values = x_values + x_values**2 + x_values**3  # Example function: y = x^2
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)
 y = torch.tensor(y_values, dtype=torch.float32).reshape(-1, 1)
 
-# Create data loader
-dataset = TensorDataset(X, y)
-batch_size = 1000
-train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+# Split data into train and validation sets (80-20 split) using random indices
+indices = np.random.permutation(len(X))
+train_size = int(1 * len(X))
+train_indices, val_indices = indices[:train_size], indices[train_size:]
+
+X_train, X_val = X[train_indices], X[val_indices]
+y_train, y_val = y[train_indices], y[val_indices]
+
+# Create train and validation datasets
+train_dataset = TensorDataset(X_train, y_train)
+val_dataset = TensorDataset(X_val, y_val)
+
+# Create data loaders
+batch_size = 64
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
 # Initialize model
 model = ConnectivityEQLModel(
@@ -56,7 +69,8 @@ model.get_equation()
 # Train with parameter optimization
 best_model, best_loss, best_architecture, opt_result = model.train_all_architectures(
     train_loader,
-    num_epochs=100,
+    val_loader,
+    num_epochs=1500,
     max_architectures=10,
     optimize_final=True,  # Enable parameter optimization
     optimization_method='Powell',

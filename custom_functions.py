@@ -115,7 +115,7 @@ class SafePower(BaseSafeFunction):
         super().__init__("power", "pow")
         self.hardsigmoid = nn.Hardsigmoid()
         self.sign_params = None
-        self.count = 0
+        self.count = -3
 
     def init_parameters(self, input_size, output_size):
         """Initialize parameters for EQL layer integration"""
@@ -124,8 +124,8 @@ class SafePower(BaseSafeFunction):
         self.sign_params = nn.Parameter(torch.zeros(output_size))
         
         # Initialize exponents between 1 and 6
-        nn.init.uniform_(self.weight, 2+self.count, 2+self.count)
-        #self.count += 1
+        nn.init.uniform_(self.weight, 1.0, 6.0)
+        self.count += 1
         nn.init.zeros_(self.bias)
         nn.init.zeros_(self.sign_params)
 
@@ -190,9 +190,14 @@ class SafePower(BaseSafeFunction):
         weight = self.weight.data[0].item()
         sign = self.sign_params.data[0].item()
         if sign > 0.5:  # even power behavior
-            return f"{sympy.Abs(x)}^{weight}"
+            #return f"{sympy.Abs(x)}^{weight}"
+            return f"{(x)}^{weight}"
         else:  # odd power behavior
-            return f"sign({x}) * {sympy.Abs(x)}^{weight}"
+            #return f"sign({x}) * {sympy.Abs(x)}^{weight}"
+            return f"{(x)}^{weight}"
+    
+    def get_parameters_list(self):
+        return[], [self.sign_params, self.weight], []
 
 # Update the SYMPY_MAPPING dictionary to include SafePower
 def power_to_sympy(x, **kwargs):
@@ -202,9 +207,200 @@ def power_to_sympy(x, **kwargs):
     
     # Create a visual representation of the power function
     if sign > 0.5:  # even power behavior
-        return f"{sympy.Abs(x)}^{weight}"
+        #return f"{sympy.Abs(x)}^{weight}"
+        return f"{(x)}^{weight}"
     else:  # odd power behavior
-        return f"sign({x}) * {sympy.Abs(x)}^{weight}"
+        #return f"sign({x}) * {sympy.Abs(x)}^{weight}"
+        return f"{(x)}^{weight}"
+
+
+
+from typing import List, Tuple
+
+class SafePower2(BaseSafeFunction):
+    """
+    SafePower function aligned with mvpower.
+    Implements a power function with trainable exponents and sign handling.
+    """
+    start_from = 1  # Class attribute to match mvpower's behavior
+
+    def __init__(self) -> None:
+        """
+        Initialize the SafePower layer.
+        """
+        super().__init__("power", "pow")
+        self.hardsigmoid = nn.Hardsigmoid()
+        self.weight = None  # To be initialized in init_parameters
+        self.bias = None
+        self.Wsign = None    # To be initialized in init_sign_params
+        self.actualsign = None
+        self.start_from = SafePower.start_from  # Instance attribute for flexibility
+
+    def init_parameters(self, input_size: int, output_size: int) -> None:
+        """
+        Initialize parameters for the SafePower layer.
+
+        Parameters:
+        - input_size (int): Number of input features.
+        - output_size (int): Number of output features.
+        """
+        # Initialize weight similar to mvpower's weight_init_values
+        if output_size > input_size:
+            times = (output_size // input_size) + 1
+            identity = np.eye(input_size)
+            output_matrix = np.concatenate([(self.start_from + i) * identity for i in range(times)], axis=1)
+            Wdata = torch.tensor(output_matrix[:, :output_size], dtype=torch.float32)
+            self.weight = nn.Parameter(Wdata)
+        elif input_size > 1 and output_size == 1:
+            Wdata = 2 * torch.rand((output_size, input_size)) - 1  # Initialized between -1 and 1
+            self.weight = nn.Parameter(Wdata)
+        else:
+            Wdata = torch.rand((output_size, input_size))
+            self.weight = nn.Parameter(Wdata)
+
+        # Initialize Wsign based on weight parity (assuming integer weights)
+        self.init_sign_params()
+
+        self.bias = nn.Parameter(torch.zeros(output_size))
+
+    def init_sign_params(self) -> None:
+        """
+        Initialize Wsign based on the parity of the weights.
+        If weights are floats, a different initialization strategy is used.
+        """
+        if torch.is_floating_point(self.weight):
+            # For floating-point weights, initialize Wsign to favor odd functions initially
+            # This mirrors mvpower's initialization logic where Wsign is -1.5 when weight%2 != 0
+            W_even = ((self.weight.data % 2) == 0).float()
+            Wsign = 1.5 * W_even - 1.5 * (1 - W_even)
+            self.Wsign = nn.Parameter(Wsign.unsqueeze(0))  # Adding batch dimension
+        else:
+            # If weights are integers, use the same logic as mvpower
+            W_even = ((self.weight.data % 2) == 0).float()
+            Wsign = 1.5 * W_even - 1.5 * (1 - W_even)
+            self.Wsign = nn.Parameter(Wsign.unsqueeze(0))  # Adding batch dimension
+
+    def get_param_list(self) -> Tuple[List[nn.Parameter], List[nn.Parameter], List[nn.Parameter]]:
+        """
+        Categorize parameters into three groups.
+
+        Returns:
+        - Tuple containing three lists of parameters.
+        """
+        return [], [self.Wsign, self.weight], []
+
+    def change_start(self, function_list: List, has_selector: bool, **kwargs) -> None:
+        """
+        Increment start_from based on the presence of certain functions.
+
+        Parameters:
+        - function_list (List): List of functions to check.
+        - has_selector (bool): Indicator if a selector is present.
+        """
+        haslinear = any(isinstance(x, mvlinear) for x in function_list)
+        if haslinear or has_selector:
+            self.start_from += 1
+
+    def sign_init_values(self, *shape: int) -> None:
+        """
+        Re-initialize Wsign based on the current weight values.
+        This method can be called if weights are updated post-initialization.
+
+        Parameters:
+        - shape (int): Shape for Wsign initialization.
+        """
+        # Replicating mvpower's sign_init_values logic
+        if torch.is_floating_point(self.weight):
+            W_even = ((self.weight.data % 2) == 0).float()
+            Wsign = 1.5 * W_even - 1.5 * (1 - W_even)
+            self.Wsign = nn.Parameter(Wsign.unsqueeze(0))
+        else:
+            W_even = ((self.weight.data % 2) == 0).float()
+            Wsign = 1.5 * W_even - 1.5 * (1 - W_even)
+            self.Wsign = nn.Parameter(Wsign.unsqueeze(0))
+
+    def preprocess(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Preprocess input by taking the logarithm of its absolute value.
+
+        Parameters:
+        - x (torch.Tensor): Input tensor.
+
+        Returns:
+        - torch.Tensor: Preprocessed tensor.
+        """
+        abs_x = torch.clamp(torch.abs(x), min=0.01)
+        log_input = torch.log(abs_x)
+        return log_input
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass for the SafePower layer.
+
+        Parameters:
+        - x (torch.Tensor): Input tensor of shape (N, D).
+
+        Returns:
+        - torch.Tensor: Output tensor after applying the power function.
+        """
+        # Store the sign of the input
+        self.sign = torch.sign(x)
+        
+        # Preprocess the input
+        x_preprocessed = self.preprocess(x)
+        
+        # Compute the power without sign
+        power_no_sign = torch.exp(torch.matmul(x_preprocessed, self.weight.t()))  # Shape: (N, out_dim)
+        
+        # Apply hardsigmoid to Wsign to get symmetry factor
+        simetry = self.hardsigmoid(self.Wsign)  # Shape: (1, out_dim)
+        
+        # During evaluation, threshold the symmetry factor
+        if not self.training:
+            simetry = (simetry > 0.5).float()
+        
+        self.actualsign = simetry
+        
+        # Reshape for broadcasting
+        sign_reshaped = self.sign.unsqueeze(-1)  # Shape: (N, D, 1) if necessary
+        # Depending on the shapes, adjust accordingly. Assuming (N, D) and (1, out_dim)
+        # We need to ensure that simetry is broadcasted correctly
+        # Here, assuming out_dim == D or similar
+        
+        # Compute the final sign by blending between 1 and sign(x)
+        # simetry * 1 + (1 - simetry) * sign(x)
+        # Ensure that simetry has the right shape
+        simetry_expanded = simetry.expand_as(power_no_sign)  # Shape: (N, out_dim)
+        final_sign = simetry_expanded + self.sign * (1 - simetry_expanded)
+        
+        # Compute the final output
+        power_out = final_sign * power_no_sign  # Shape: (N, out_dim)
+        
+        return power_out
+
+    def acceptRead(self, read_obj, inputs: torch.Tensor) -> str:
+        """
+        Generate a string representation of the power function.
+
+        Parameters:
+        - read_obj: Object that handles the string representation.
+        - inputs (torch.Tensor): Input tensor.
+
+        Returns:
+        - str: String representation of the power function.
+        """
+        simetry = self.hardsigmoid(self.Wsign)
+        if not self.training:
+            simetry = (simetry > 0.5).float()
+        self.actualsign = simetry
+        return read_obj.powerStr(self.fn_alias, inputs, w=self.weight, Wsign=self.actualsign)
+
+    def clip(self) -> None:
+        """
+        Clip the weight parameters to a specified range.
+        """
+        with torch.no_grad():
+            self.weight.clamp_(-2.0, 6.0)  # Aligning with mvpower's clipping range
 
 
 class SafeIdentityFunction(BaseSafeFunction):

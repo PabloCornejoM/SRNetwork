@@ -77,4 +77,27 @@ class WandBLogger:
     
     def finish(self) -> None:
         """Finish the logging session."""
-        wandb.finish() 
+        wandb.finish()
+    
+    def log_weights_comparison(self, model: torch.nn.Module, step: int) -> None:
+        """Log all model weights as lines in a single plot."""
+        import matplotlib.pyplot as plt
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Collect all weights
+        for name, param in model.named_parameters():
+            if 'weight' in name or 'W' in name:  # Only plot weights, not biases
+                weights = param.data.cpu().numpy().flatten()
+                ax.plot(weights, label=name, alpha=0.7)
+        
+        ax.set_xlabel('Weight Index')
+        ax.set_ylabel('Weight Value')
+        ax.set_title('Model Weights Comparison')
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.tight_layout()
+        
+        # Log to wandb
+        wandb.log({"weights_comparison": wandb.Image(fig)}, step=step)
+        plt.close(fig) 
