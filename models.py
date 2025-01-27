@@ -17,9 +17,10 @@ from trainning import train_model_c
 
 
 def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0.001,
-                    reg_strength=1e-3, threshold=0.1, logger=None):
+                    reg_strength=1e-3, threshold=0.1, logger=None, decimal_penalty=0.01):
     """
     Train EQL model using the three-phase schedule from the paper.
+    Added decimal complexity penalty parameter.
     
     Arguments:
         model: EQLModel instance
@@ -80,8 +81,8 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
 
         if epoch == 1000:
             optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
-        if epoch == 1300:
-            optimizer = torch.optim.Adam(model.parameters(), lr=1)
+        #if epoch == 1300:
+        #    optimizer = torch.optim.Adam(model.parameters(), lr=1)
 
         """if epoch == 500:
             optimizer = torch.optim.Adam(model.parameters(), lr=1)
@@ -103,7 +104,7 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
             print("lr", lr)"""
         
 
-        train_epoch(model, train_loader, optimizer, criterion, reg_strength=reg_strength, epoch=epoch, num_epoch=phase2_epochs, logger=logger)
+        train_epoch(model, train_loader, optimizer, criterion, reg_strength=reg_strength, epoch=epoch, num_epoch=phase2_epochs, logger=logger, decimal_penalty=decimal_penalty)
         # Validate and step the scheduler
         if val_loader is not None:
             model.eval()
@@ -136,48 +137,39 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
     #for epoch in range(phase3_epochs):
         #train_epoch(model, train_loader, optimizer, criterion, reg_strength=0.0, epoch=epoch, num_epoch=phase3_epochs, logger=logger)
 
-def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0, num_epoch=0, logger=None):
-    """Train for one epoch with improved exploration-exploitation strategy."""
+def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0, num_epoch=0, logger=None, decimal_penalty=0.01):
+    """Train for one epoch with improved exploration-exploitation strategy and decimal complexity penalty."""
     model.train()
     step = epoch * len(train_loader)
     total_loss = 0
     
-    # Dynamic learning rate scheduling based on training phase
-    '''if epoch < num_epoch * 0.7:  # Exploration phase
-        lr = 0.01
-    elif epoch < num_epoch * 0.9:  # Transition phase
-        lr = 0.1
-    elif epoch < num_epoch * 0.95:  # Initial exploitation phase
-        lr = 0.5
-    else:  # Final exploitation phase
-        lr = 1.0
-        
-    # Update learning rate
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr'''
-    
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, batch_data in enumerate(train_loader):
+        # Handle multiple input variables
+        if len(batch_data) == 2:  # Single input variable case
+            data, target = batch_data
+        else:  # Multiple input variables case
+            *data_vars, target = batch_data
+            data = torch.stack(data_vars, dim=1)  # Stack input variables along dimension 1
+            
         optimizer.zero_grad()
         output = model(data)
+        
+        # Base loss
         loss = criterion(output, target)
         
+        # L1 regularization
         if reg_strength > 0:
             l1_loss = reg_strength * model.l1_regularization()
             loss += l1_loss
             
         loss.backward()
-        
-        # Gradient clipping to prevent instability with high learning rates
-        #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        
         optimizer.step()
         total_loss += loss.item()
 
         if logger:
             metrics = {
                 "loss": loss.item(),
-                "learning_rate": lr,
-                "reg_strength": current_reg if reg_strength > 0 else 0
+                "reg_strength": reg_strength if reg_strength > 0 else 0
             }
             if reg_strength > 0:
                 metrics["l1_loss"] = l1_loss.item()
@@ -209,7 +201,7 @@ class EQLModel(nn.Module):
         name: model name for identification
     """
     def __init__(self, input_size, output_size, num_layers=4, 
-                 hyp_set=None, nonlinear_info=None, name='EQL', exp_n=1):
+                 hyp_set=None, nonlinear_info=None, name='EQL', exp_n=1, functions=None):
         super(EQLModel, self).__init__()
         
         self.input_size = input_size
@@ -244,8 +236,10 @@ class EQLModel(nn.Module):
         ]
         print(self.unary_functions)
 
+        
+
         if exp_n == 1 or exp_n == 2 or exp_n == 3 or exp_n == 4 or exp_n == 12:
-            self.unary_functions = [[6, 6, 6, 6, 6, 6]]
+            self.unary_functions = [[6, 6, 6, 6]]
         if exp_n == 5:
             raise ValueError("This is not a valid experiment number yet")
         if exp_n == 6:
@@ -260,6 +254,20 @@ class EQLModel(nn.Module):
             raise ValueError("This is not a valid experiment number yet")
         if exp_n == 11:
             raise ValueError("This is not a valid experiment number yet")
+        
+        if exp_n == 99:
+            self.unary_functions = [[0], [5], [3]]
+
+        if functions is not None:            
+            self.unary_functions = [[],[],[]]
+            for i, item in enumerate(functions):
+                if item == "id":
+                    self.unary_functions[i] = [0]
+                if item == "log":
+                    self.unary_functions[i] = [5]
+                if item == "sin":
+                    self.unary_functions[i] = [3]
+            
 
 
         print("Were changing the unary functions here")
@@ -463,13 +471,52 @@ class EQLModel(nn.Module):
         
         return model_str
 
+    def decimal_complexity_penalty(self):
+        """
+        Calculate a penalty based on the decimal complexity of parameters.
+        Returns higher values for parameters with more decimal places.
+        Excludes sign parameters from SafePower functions.
+        """
+        penalty = 0.0
+        
+        def param_decimal_penalty(param, param_name=''):
+            # Skip sign parameters from SafePower
+            if 'sign_params' in param_name:
+                return 0.0
+            
+            # Convert parameters to float values
+            values = param.detach().cpu().numpy().flatten()
+            
+            # Calculate how far each value is from the nearest integer
+            distances = np.abs(values - np.round(values))
+            
+            # Penalize based on distance to nearest integer
+            # Using a smooth function that increases with distance
+            penalty = torch.tensor(np.mean(1 - np.exp(-5 * distances)), 
+                                 device=param.device, 
+                                 dtype=param.dtype)
+            return penalty
+        
+        # Apply to all parameters in the model
+        for layer in self.layers:
+            for name, param in layer.named_parameters():
+                if 'W' in name or 'b' in name:  # Only apply to weights and biases
+                    penalty += param_decimal_penalty(param, name)
+        
+        # Include output layer parameters
+        for name, param in self.output_layer.named_parameters():
+            if 'W' in name or 'b' in name:  # Only apply to weights and biases
+                penalty += param_decimal_penalty(param, name)
+        
+        return penalty
+
 class ConnectivityEQLModel(EQLModel):
     """
     Extended EQL model that supports exploring different connectivity patterns between layers.
     """
     def __init__(self, input_size, output_size, num_layers=4,
                  hyp_set=None, nonlinear_info=None, name='ConnectivityEQL',
-                 min_connections_per_neuron=1, exp_n=1):
+                 min_connections_per_neuron=1, exp_n=1, functions=None):
         super(ConnectivityEQLModel, self).__init__(
             input_size=input_size,
             output_size=output_size,
@@ -477,11 +524,12 @@ class ConnectivityEQLModel(EQLModel):
             hyp_set=hyp_set,
             nonlinear_info=nonlinear_info,
             exp_n=exp_n, 
-            name=name
+            name=name,
+            functions=functions
         )
         self.min_connections_per_neuron = min_connections_per_neuron
         
-    def generate_valid_patterns(self, m, n, min_connections=1):
+    def generate_valid_patterns(self, m, n, min_connections=1, last=0):
         """
         Generate all valid connection patterns between two layers of sizes m and n.
         
@@ -494,6 +542,8 @@ class ConnectivityEQLModel(EQLModel):
             List of valid connectivity matrices (m x n)
         """
         import itertools
+
+        
         
         def is_valid_pattern(matrix):
             # Check source layer connections
@@ -505,6 +555,16 @@ class ConnectivityEQLModel(EQLModel):
             target_connections = [sum(matrix[i][j] for i in range(n)) for j in range(m)]
             if any(conn < min_connections for conn in target_connections):
                 return False
+            
+            # Check SafePower constraint only when it's in the target layer
+            for i in range(n):
+                # Check if this node uses SafePower function
+                if (i < len(self.unary_functions[0]) and  # Only check unary function nodes
+                    isinstance(self.torch_funcs[self.unary_functions[0][i]], SafePower)):
+                    # Count connections for this node (as target)
+                    connections = sum(matrix[i][j] for j in range(m))
+                    if connections > 1:
+                        return False
                 
             return True
         
@@ -518,9 +578,11 @@ class ConnectivityEQLModel(EQLModel):
                 for idx in combination:
                     i, j = idx // m, idx % m
                     matrix[i][j] = 1
-                    
+                
+                if last == 1:
+                    patterns.append(matrix)
                 # Check if pattern is valid
-                if is_valid_pattern(matrix):
+                elif is_valid_pattern(matrix):
                     patterns.append(matrix)
         print(patterns)            
         return patterns
@@ -549,11 +611,21 @@ class ConnectivityEQLModel(EQLModel):
         # Generate valid patterns for each pair of consecutive layers
         layer_patterns = []
         for i in range(len(layer_sizes) - 1):
-            patterns = self.generate_valid_patterns(
-                layer_sizes[i], 
-                layer_sizes[i + 1],
-                self.min_connections_per_neuron
-            )
+            if i == len(layer_sizes) - 2:
+                patterns = self.generate_valid_patterns(
+                    layer_sizes[i], 
+                    layer_sizes[i + 1],
+                    self.min_connections_per_neuron,
+                    last = 1 
+                )
+
+            else:
+                patterns = self.generate_valid_patterns(
+                    layer_sizes[i], 
+                    layer_sizes[i + 1],
+                    self.min_connections_per_neuron,
+                    last = 0
+                )
             
             # Optionally limit the number of patterns per layer
             if max_patterns_per_layer and len(patterns) > max_patterns_per_layer:
@@ -564,7 +636,7 @@ class ConnectivityEQLModel(EQLModel):
         
         # Generate all combinations using itertools.product
         import itertools
-        all_architectures = list(itertools.product(*layer_patterns))        
+        all_architectures = list(itertools.product(*layer_patterns))
         
         return all_architectures
 
@@ -748,6 +820,7 @@ class ConnectivityEQLModel(EQLModel):
                 'disp': True,
                 'adaptive': True
             }
+ 
         
         # Run optimization
         result = minimize(
@@ -755,6 +828,64 @@ class ConnectivityEQLModel(EQLModel):
             initial_params,
             method=method,
             options=options
+        )
+        
+        # Update model with best parameters
+        self.set_trainable_parameters(result.x)
+        
+        return result
+
+    def optimize_parameters2(self, x_data, y_data, options=None):
+        """
+        Optimize model parameters using scipy.optimize.dual_annealing
+        
+        Args:
+            x_data: Input data as numpy array or torch tensor
+            y_data: Target data as numpy array or torch tensor
+            options: Dictionary of options for the optimizer
+            
+        Returns:
+            OptimizeResult object from scipy.optimize
+        """
+        from scipy.optimize import dual_annealing
+        
+        # Convert data to numpy if needed
+        if torch.is_tensor(x_data):
+            x_data = x_data.detach().numpy()
+        if torch.is_tensor(y_data):
+            y_data = y_data.detach().numpy()
+            
+        def loss_function(params):
+            """Compute MSE loss for given parameters."""
+            self.set_trainable_parameters(params)
+            with torch.no_grad():
+                x_tensor = torch.tensor(x_data, dtype=torch.float32)
+                y_pred = self(x_tensor)
+                y_pred = y_pred.detach().numpy()
+                return np.mean((y_data - y_pred) ** 2)
+        
+        # Get initial parameters and set bounds
+        initial_params = self.get_trainable_parameters()
+        param_bounds = [(-5, 5) for _ in range(len(initial_params))]  # Adjust bounds as needed
+        
+        # Set default options if none provided
+        
+        options = {
+            'maxiter': 1000,
+            'initial_temp': 5230.0,
+            'restart_temp_ratio': 2e-5,
+            'visit': 2.62,
+            'accept': -5.0,
+            'maxfun': 10000
+        }
+        
+        # Run optimization
+        result = dual_annealing(
+            loss_function,
+            bounds=param_bounds,
+            x0=initial_params,  # Provide initial guess
+            seed=42,  # For reproducibility
+            **options
         )
         
         # Update model with best parameters
@@ -826,7 +957,6 @@ class ConnectivityEQLModel(EQLModel):
                 if optimize_final:
                     optimization_result = self.optimize_parameters(
                         *self.get_all_data(train_loader),
-                        method=optimization_method,
                         options=optimization_options
                     )
                     optimized_loss = optimization_result.fun
