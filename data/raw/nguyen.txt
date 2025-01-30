@@ -1,0 +1,15 @@
+Equation_name	in_f	Equation	min_range	max_range	n_points	sampling
+Nguyen-1	1	x[:, 0]**3 + x[:, 0]**2 +x[:,0]	-1	1	1000	Uniform
+Nguyen-2	1	x[:, 0]**4 + x[:, 0]**3 + x[:, 0]**2 +x[:,0]	-1	1	1000	Uniform
+Nguyen-3	1	x[:, 0]**5 + x[:, 0]**4 + x[:, 0]**3 + x[:, 0]**2 +x[:, 0]	-1	1	1000	Uniform
+Nguyen-4	1	x[:, 0]**6 + x[:, 0]**4 + x[:, 0]**3 + x[:, 0]**2 +x[:, 0]	-1	1	1000	Uniform
+Nguyen-5	1	np.sin(np.square(x[:, 0]))*np.cos(x[:, 0]) -1	-1	1	1000	Uniform
+Nguyen-6	1	np.sin(x[:, 0]) + np.sin(x[:, 0]+x[:, 0]**2)	-1	1	1000	Uniform
+Nguyen-7	1	np.log(x[:, 0]+1) + np.log(x[:, 0]**2+1)	0	2	1000	Uniform
+Nguyen-8	1	np.sqrt(x[:, 0])	0	4	1000	Uniform
+Nguyen-9	2	np.sin(x[:, 0]) + np.sin(x[:, 1]**2)	0	1	1000	Uniform
+Nguyen-10	2	2*np.sin(x[:, 0])*np.cos(x[:, 1])	0	1	1000	Uniform
+Nguyen-12	2	x[:, 0]**4 - x[:, 0]**3 + 0.5*x[:, 1]**2 -x[:, 1]	0	1	1000	Uniform
+Constant-1	1	3.39*x[:, 0]**3 + 2.12*x[:, 0]**2+1.78*x[:, 0]	-1	1	1000	Uniform
+Constant-2	1	np.sin(x[:, 0]**2)*np.cos(x[:, 0]) -0.75	-1	1	1000	Uniform
+Constant-3	2	np.sin(1.5*x[:, 0])*np.cos(0.5*x[:, 1])	0	1	1000	Uniform
