@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import inspect
 
-from custom_functions import SafePower, SafeIdentityFunction  
+from src.models.custom_functions import SafePower, SafeIdentityFunction  
 
 class Connected(nn.Module):
     """

@@ -1,24 +1,23 @@
 import sys
 from pathlib import Path
 
-project_root = str(Path(__file__).parent.parent)
+project_root = str(Path(__file__).parent.parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
 import torch
 import numpy as np
-from models import EQLModel, ConnectivityEQLModel
-from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
+from src.models.eql_model import EQLModel, ConnectivityEQLModel
+from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
 
 
 def generate_data(num_samples=1500):
     """Generate synthetic data for x^2."""
     # Create synthetic data with random points in the interval
-    x1_values = np.linspace(0, 1, num_samples)
-    x2_values = np.linspace(0, 1, num_samples)
-    y_values = np.sin(x1_values) + np.sin(x2_values)  # Example function: y = x^2
-    return x1_values, x2_values, y_values
+    x_values = np.linspace(0, 4, num_samples)
+    y_values = x_values**0.5  # Example function: y = x^2
+    return x_values, y_values
 
 
 
@@ -40,33 +39,31 @@ def main():
     input_size = 1
     output_size = 1
     #hidden_dim = [[2], []] # it is the output size of each neurons in each layer
-    num_layers = 3 # hidden + 1 output
+    num_layers = 2 # hidden + 1 output
     nonlinear_info = [ # it is the number of neurons in each layer
-        (2, 0),  # Layer 1: 4 unary, 4 binary functions
-        (2, 0),  # Layer 2
+        (1, 0),  # Layer 1: 4 unary, 4 binary functions
+        (0, 0),  # Layer 2
         (0, 0)   # Layer 3
     ]
 
-    x1_values, x2_values, y_values = generate_data()
+    x_values, y_values = generate_data()
 
     # Convert to PyTorch tensors
-    X1 = torch.tensor(x1_values, dtype=torch.float32).reshape(-1, 1)
-    X2 = torch.tensor(x2_values, dtype=torch.float32).reshape(-1, 1)
+    X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)
     y = torch.tensor(y_values, dtype=torch.float32).reshape(-1, 1)
 
     # Split data into train and validation sets (80-20 split) using random indices
-    indices = np.random.permutation(len(X1))
-    train_size = int(0.66666 * len(X1)) + 1
+    indices = np.random.permutation(len(X))
+    train_size = int(0.66666 * len(X)) + 1
     print(train_size)
     train_indices, val_indices = indices[:train_size], indices[train_size:]
 
-    X1_train, X1_val = X1[train_indices], X1[val_indices]
-    X2_train, X2_val = X2[train_indices], X2[val_indices]
+    X_train, X_val = X[train_indices], X[val_indices]
     y_train, y_val = y[train_indices], y[val_indices]
 
     # Create train and validation datasets
-    train_dataset = TensorDataset(X1_train, X2_train, y_train)
-    val_dataset = TensorDataset(X1_val, X2_val, y_val)
+    train_dataset = TensorDataset(X_train, y_train)
+    val_dataset = TensorDataset(X_val, y_val)
 
     # Create data loaders
     batch_size = 64
@@ -75,13 +72,13 @@ def main():
 
     # Initialize model with full connectivity, this will be use to search for the best architecture
     model = ConnectivityEQLModel(
-        input_size=2,
+        input_size=1,
         output_size=1,
         num_layers=num_layers,
         hyp_set=hyp_set,
         nonlinear_info=nonlinear_info,
         min_connections_per_neuron=1,
-        exp_n = 9
+        exp_n = 8
     )
 
     #model.get_equation()

@@ -1,22 +1,22 @@
 import sys
 from pathlib import Path
 
-project_root = str(Path(__file__).parent.parent)
+project_root = str(Path(__file__).parent.parent.parent)
 if project_root not in sys.path:
     sys.path.append(project_root)
 
 import torch
 import numpy as np
-from models import EQLModel, ConnectivityEQLModel
-from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
+from src.models.eql_model import EQLModel, ConnectivityEQLModel
+from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
 
 
 def generate_data(num_samples=1500):
     """Generate synthetic data for x^2."""
     # Create synthetic data with random points in the interval
-    x_values = np.linspace(0, 4, num_samples)
-    y_values = x_values**0.5  # Example function: y = x^2
+    x_values = np.linspace(0.01, 2, num_samples)
+    y_values = np.log(x_values + 1) + np.log(x_values**2 + 1)  # Example function: y = x^2
     return x_values, y_values
 
 
@@ -39,10 +39,10 @@ def main():
     input_size = 1
     output_size = 1
     #hidden_dim = [[2], []] # it is the output size of each neurons in each layer
-    num_layers = 2 # hidden + 1 output
+    num_layers = 3 # hidden + 1 output
     nonlinear_info = [ # it is the number of neurons in each layer
-        (1, 0),  # Layer 1: 4 unary, 4 binary functions
-        (0, 0),  # Layer 2
+        (2, 0),  # Layer 1: 4 unary, 4 binary functions
+        (2, 0),  # Layer 2
         (0, 0)   # Layer 3
     ]
 
@@ -78,7 +78,7 @@ def main():
         hyp_set=hyp_set,
         nonlinear_info=nonlinear_info,
         min_connections_per_neuron=1,
-        exp_n = 8
+        exp_n = 7
     )
 
     #model.get_equation()

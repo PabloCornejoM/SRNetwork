@@ -12,14 +12,13 @@ import numpy as np
 
 import sympy
 from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
-from trainning import train_model_c
-
 
 
 def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0.001,
-                    reg_strength=1e-3, threshold=0.1, logger=None):
+                    reg_strength=1e-3, threshold=0.1, logger=None, decimal_penalty=0.01):
     """
     Train EQL model using the three-phase schedule from the paper.
+    Added decimal complexity penalty parameter.
     
     Arguments:
         model: EQLModel instance
@@ -80,8 +79,8 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
 
         if epoch == 1000:
             optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
-        if epoch == 1300:
-            optimizer = torch.optim.Adam(model.parameters(), lr=1)
+        #if epoch == 1300:
+        #    optimizer = torch.optim.Adam(model.parameters(), lr=1)
 
         """if epoch == 500:
             optimizer = torch.optim.Adam(model.parameters(), lr=1)
@@ -103,7 +102,7 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
             print("lr", lr)"""
         
 
-        train_epoch(model, train_loader, optimizer, criterion, reg_strength=reg_strength, epoch=epoch, num_epoch=phase2_epochs, logger=logger)
+        train_epoch(model, train_loader, optimizer, criterion, reg_strength=reg_strength, epoch=epoch, num_epoch=phase2_epochs, logger=logger, decimal_penalty=decimal_penalty)
         # Validate and step the scheduler
         if val_loader is not None:
             model.eval()
@@ -136,29 +135,39 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
     #for epoch in range(phase3_epochs):
         #train_epoch(model, train_loader, optimizer, criterion, reg_strength=0.0, epoch=epoch, num_epoch=phase3_epochs, logger=logger)
 
-def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0, num_epoch=0, logger=None):
-    """Train for one epoch."""
+def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0, num_epoch=0, logger=None, decimal_penalty=0.01):
+    """Train for one epoch with improved exploration-exploitation strategy and decimal complexity penalty."""
     model.train()
     step = epoch * len(train_loader)
+    total_loss = 0
     
-    for batch_idx, (data, target) in enumerate(train_loader):
+    for batch_idx, batch_data in enumerate(train_loader):
+        # Handle multiple input variables
+        if len(batch_data) == 2:  # Single input variable case
+            data, target = batch_data
+        else:  # Multiple input variables case
+            *data_vars, target = batch_data
+            data = torch.stack(data_vars, dim=1)  # Stack input variables along dimension 1
+            
         optimizer.zero_grad()
         output = model(data)
+        
+        # Base loss
         loss = criterion(output, target)
         
-        # Add L1 regularization
+        # L1 regularization
         if reg_strength > 0:
             l1_loss = reg_strength * model.l1_regularization()
             loss += l1_loss
             
         loss.backward()
         optimizer.step()
-        #.item())
+        total_loss += loss.item()
 
         if logger:
             metrics = {
                 "loss": loss.item(),
-                "learning_rate": optimizer.param_groups[0]['lr']
+                "reg_strength": reg_strength if reg_strength > 0 else 0
             }
             if reg_strength > 0:
                 metrics["l1_loss"] = l1_loss.item()
@@ -166,12 +175,12 @@ def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0
             logger.log_metrics(metrics, step + batch_idx)
             logger.log_gradients(model, step + batch_idx)
             logger.log_weights(model, step + batch_idx)
-            #logger.log_weights_comparison(model, step + batch_idx)
             
-            # Log equation periodically (e.g., every 100 steps)
             if (step + batch_idx) % 10000 == 0:
                 equation = model.get_equation()
                 logger.log_equation(equation, step + batch_idx)
+                
+    return total_loss / len(train_loader)
 
 
 
@@ -190,7 +199,7 @@ class EQLModel(nn.Module):
         name: model name for identification
     """
     def __init__(self, input_size, output_size, num_layers=4, 
-                 hyp_set=None, nonlinear_info=None, name='EQL', exp_n=1):
+                 hyp_set=None, nonlinear_info=None, name='EQL', exp_n=1, functions=None):
         super(EQLModel, self).__init__()
         
         self.input_size = input_size
@@ -225,8 +234,10 @@ class EQLModel(nn.Module):
         ]
         print(self.unary_functions)
 
+        
+
         if exp_n == 1 or exp_n == 2 or exp_n == 3 or exp_n == 4 or exp_n == 12:
-            self.unary_functions = [[6, 6, 6, 6, 6, 6]]
+            self.unary_functions = [[6, 6, 6, 6]]
         if exp_n == 5:
             raise ValueError("This is not a valid experiment number yet")
         if exp_n == 6:
@@ -241,6 +252,20 @@ class EQLModel(nn.Module):
             raise ValueError("This is not a valid experiment number yet")
         if exp_n == 11:
             raise ValueError("This is not a valid experiment number yet")
+        
+        if exp_n == 99:
+            self.unary_functions = [[0], [5], [3]]
+
+        if functions is not None:            
+            self.unary_functions = [[],[],[]]
+            for i, item in enumerate(functions):
+                if item == "id":
+                    self.unary_functions[i] = [0]
+                if item == "log":
+                    self.unary_functions[i] = [5]
+                if item == "sin":
+                    self.unary_functions[i] = [3]
+            
 
 
         print("Were changing the unary functions here")
@@ -444,13 +469,52 @@ class EQLModel(nn.Module):
         
         return model_str
 
+    def decimal_complexity_penalty(self):
+        """
+        Calculate a penalty based on the decimal complexity of parameters.
+        Returns higher values for parameters with more decimal places.
+        Excludes sign parameters from SafePower functions.
+        """
+        penalty = 0.0
+        
+        def param_decimal_penalty(param, param_name=''):
+            # Skip sign parameters from SafePower
+            if 'sign_params' in param_name:
+                return 0.0
+            
+            # Convert parameters to float values
+            values = param.detach().cpu().numpy().flatten()
+            
+            # Calculate how far each value is from the nearest integer
+            distances = np.abs(values - np.round(values))
+            
+            # Penalize based on distance to nearest integer
+            # Using a smooth function that increases with distance
+            penalty = torch.tensor(np.mean(1 - np.exp(-5 * distances)), 
+                                 device=param.device, 
+                                 dtype=param.dtype)
+            return penalty
+        
+        # Apply to all parameters in the model
+        for layer in self.layers:
+            for name, param in layer.named_parameters():
+                if 'W' in name or 'b' in name:  # Only apply to weights and biases
+                    penalty += param_decimal_penalty(param, name)
+        
+        # Include output layer parameters
+        for name, param in self.output_layer.named_parameters():
+            if 'W' in name or 'b' in name:  # Only apply to weights and biases
+                penalty += param_decimal_penalty(param, name)
+        
+        return penalty
+
 class ConnectivityEQLModel(EQLModel):
     """
     Extended EQL model that supports exploring different connectivity patterns between layers.
     """
     def __init__(self, input_size, output_size, num_layers=4,
                  hyp_set=None, nonlinear_info=None, name='ConnectivityEQL',
-                 min_connections_per_neuron=1, exp_n=1):
+                 min_connections_per_neuron=1, exp_n=1, functions=None):
         super(ConnectivityEQLModel, self).__init__(
             input_size=input_size,
             output_size=output_size,
@@ -458,11 +522,12 @@ class ConnectivityEQLModel(EQLModel):
             hyp_set=hyp_set,
             nonlinear_info=nonlinear_info,
             exp_n=exp_n, 
-            name=name
+            name=name,
+            functions=functions
         )
         self.min_connections_per_neuron = min_connections_per_neuron
         
-    def generate_valid_patterns(self, m, n, min_connections=1):
+    def generate_valid_patterns(self, m, n, min_connections=1, last=0):
         """
         Generate all valid connection patterns between two layers of sizes m and n.
         
@@ -475,6 +540,8 @@ class ConnectivityEQLModel(EQLModel):
             List of valid connectivity matrices (m x n)
         """
         import itertools
+
+        
         
         def is_valid_pattern(matrix):
             # Check source layer connections
@@ -486,6 +553,16 @@ class ConnectivityEQLModel(EQLModel):
             target_connections = [sum(matrix[i][j] for i in range(n)) for j in range(m)]
             if any(conn < min_connections for conn in target_connections):
                 return False
+            
+            # Check SafePower constraint only when it's in the target layer
+            for i in range(n):
+                # Check if this node uses SafePower function
+                if (i < len(self.unary_functions[0]) and  # Only check unary function nodes
+                    isinstance(self.torch_funcs[self.unary_functions[0][i]], SafePower)):
+                    # Count connections for this node (as target)
+                    connections = sum(matrix[i][j] for j in range(m))
+                    if connections > 1:
+                        return False
                 
             return True
         
@@ -499,9 +576,11 @@ class ConnectivityEQLModel(EQLModel):
                 for idx in combination:
                     i, j = idx // m, idx % m
                     matrix[i][j] = 1
-                    
+                
+                if last == 1:
+                    patterns.append(matrix)
                 # Check if pattern is valid
-                if is_valid_pattern(matrix):
+                elif is_valid_pattern(matrix):
                     patterns.append(matrix)
         print(patterns)            
         return patterns
@@ -530,11 +609,21 @@ class ConnectivityEQLModel(EQLModel):
         # Generate valid patterns for each pair of consecutive layers
         layer_patterns = []
         for i in range(len(layer_sizes) - 1):
-            patterns = self.generate_valid_patterns(
-                layer_sizes[i], 
-                layer_sizes[i + 1],
-                self.min_connections_per_neuron
-            )
+            if i == len(layer_sizes) - 2:
+                patterns = self.generate_valid_patterns(
+                    layer_sizes[i], 
+                    layer_sizes[i + 1],
+                    self.min_connections_per_neuron,
+                    last = 1 
+                )
+
+            else:
+                patterns = self.generate_valid_patterns(
+                    layer_sizes[i], 
+                    layer_sizes[i + 1],
+                    self.min_connections_per_neuron,
+                    last = 0
+                )
             
             # Optionally limit the number of patterns per layer
             if max_patterns_per_layer and len(patterns) > max_patterns_per_layer:
@@ -545,7 +634,7 @@ class ConnectivityEQLModel(EQLModel):
         
         # Generate all combinations using itertools.product
         import itertools
-        all_architectures = list(itertools.product(*layer_patterns))        
+        all_architectures = list(itertools.product(*layer_patterns))
         
         return all_architectures
 
@@ -729,6 +818,7 @@ class ConnectivityEQLModel(EQLModel):
                 'disp': True,
                 'adaptive': True
             }
+ 
         
         # Run optimization
         result = minimize(
@@ -743,33 +833,70 @@ class ConnectivityEQLModel(EQLModel):
         
         return result
 
+    def optimize_parameters2(self, x_data, y_data, options=None):
+        """
+        Optimize model parameters using scipy.optimize.dual_annealing
+        
+        Args:
+            x_data: Input data as numpy array or torch tensor
+            y_data: Target data as numpy array or torch tensor
+            options: Dictionary of options for the optimizer
+            
+        Returns:
+            OptimizeResult object from scipy.optimize
+        """
+        from scipy.optimize import dual_annealing
+        
+        # Convert data to numpy if needed
+        if torch.is_tensor(x_data):
+            x_data = x_data.detach().numpy()
+        if torch.is_tensor(y_data):
+            y_data = y_data.detach().numpy()
+            
+        def loss_function(params):
+            """Compute MSE loss for given parameters."""
+            self.set_trainable_parameters(params)
+            with torch.no_grad():
+                x_tensor = torch.tensor(x_data, dtype=torch.float32)
+                y_pred = self(x_tensor)
+                y_pred = y_pred.detach().numpy()
+                return np.mean((y_data - y_pred) ** 2)
+        
+        # Get initial parameters and set bounds
+        initial_params = self.get_trainable_parameters()
+        param_bounds = [(-5, 5) for _ in range(len(initial_params))]  # Adjust bounds as needed
+        
+        # Set default options if none provided
+        
+        options = {
+            'maxiter': 1000,
+            'initial_temp': 5230.0,
+            'restart_temp_ratio': 2e-5,
+            'visit': 2.62,
+            'accept': -5.0,
+            'maxfun': 10000
+        }
+        
+        # Run optimization
+        result = dual_annealing(
+            loss_function,
+            bounds=param_bounds,
+            x0=initial_params,  # Provide initial guess
+            seed=42,  # For reproducibility
+            **options
+        )
+        
+        # Update model with best parameters
+        self.set_trainable_parameters(result.x)
+        
+        return result
+
     def train_all_architectures(self, train_loader, val_loader, num_epochs, learning_rate=0.001,
                               reg_strength=1e-3, threshold=0.1, max_architectures=None,
                               max_patterns_per_layer=None, optimize_final=True,
-                              optimization_method='Nelder-Mead', optimization_options=None, logger=None):
-        """
-        Train all valid architectures and return the best performing one.
-        Now includes parameter optimization after PyTorch training.
-        
-        Args:
-            train_loader: PyTorch DataLoader containing training data
-            num_epochs: Number of epochs to train each architecture
-            learning_rate: Learning rate for optimization
-            reg_strength: L1 regularization strength
-            threshold: Threshold for weight trimming
-            max_architectures: Maximum number of architectures to try
-            max_patterns_per_layer: Maximum number of patterns to consider per layer
-            optimize_final: Whether to perform final parameter optimization
-            optimization_method: Method to use for scipy.optimize.minimize
-            optimization_options: Options for the optimizer
-            logger: Logger object for logging
-            
-        Returns:
-            best_model: The best performing model
-            best_loss: The loss of the best model
-            best_architecture: The connectivity pattern of the best model
-            optimization_result: Result of parameter optimization (if performed)
-        """
+                              optimization_method='Powell', optimization_options=None, 
+                              num_parallel_trials=3, logger=None):
+        """Train multiple architectures with parallel exploration strategies."""
         architectures = self.get_all_valid_architectures(max_patterns_per_layer)
         if max_architectures is not None:
             import random
@@ -778,81 +905,85 @@ class ConnectivityEQLModel(EQLModel):
         best_loss = float('inf')
         best_model = None
         best_architecture = None
+        best_optimization_result = None
         
         print(f"Training {len(architectures)} different architectures")
         
         for arch_idx, architecture in enumerate(architectures):
-            if arch_idx == 4:
-                print("5")
             print(f"\nTraining architecture {arch_idx + 1}/{len(architectures)}")
             
-            # Build and train model
-            self.build_with_connectivity(architecture)
-            self.get_equation()
-            train_eql_model(
-                self, 
-                train_loader,
-                val_loader,
-                num_epochs, 
-                learning_rate,
-                reg_strength, 
-                threshold,
-                logger
-            )
+            # Train multiple instances with different strategies
+            trial_results = []
+            for trial in range(num_parallel_trials):
+                # Build new model instance
+                self.build_with_connectivity(architecture)
+                
+                # Different learning rate strategies for each trial
+                if trial == 0:
+                    # Progressive LR strategy (as implemented in train_epoch)
+                    train_strategy = "progressive"
+                elif trial == 1:
+                    # Cyclic LR strategy
+                    optimizer = torch.optim.Adam(self.parameters())
+                    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, 
+                    max_lr=1, epochs = num_epochs, steps_per_epoch=len(train_loader))
+
+                else:
+                    # Cosine annealing with warm restarts
+                    optimizer = torch.optim.Adam(self.parameters())
+                    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+                        optimizer, T_0=num_epochs//3, T_mult=2, eta_min=0.001
+                    )
+                
+                # Train model
+                train_eql_model(
+                    self, 
+                    train_loader,
+                    val_loader,
+                    num_epochs,
+                    learning_rate,
+                    reg_strength,
+                    threshold,
+                    logger
+                )
+                
+                # Evaluate current model
+                self.eval()
+                current_loss = self.evaluate_model(val_loader)
+                
+                # Optimize parameters
+                if optimize_final:
+                    optimization_result = self.optimize_parameters(
+                        *self.get_all_data(train_loader),
+                        options=optimization_options
+                    )
+                    optimized_loss = optimization_result.fun
+
+                else:
+                    optimized_loss = current_loss
+                    optimization_result = None
+                
+                trial_results.append({
+                    'model_state': self.state_dict(),
+                    'loss': optimized_loss,
+                    'optimization_result': optimization_result
+                })
+                print(self.get_equation())
             
-            # Evaluate
-            self.eval()
-            total_loss = 0
-            criterion = nn.MSELoss()
-            with torch.no_grad():
-                for data, target in train_loader:
-                    output = self(data)
-                    loss = criterion(output, target)
-                    total_loss += loss.item()
+            # Select best trial result
+            best_trial = min(trial_results, key=lambda x: x['loss'])
+
             
-            avg_loss = total_loss / len(train_loader)
-            print(f"Architecture {arch_idx + 1} - Average Loss: {avg_loss:.6f}")
-            
-            if avg_loss < best_loss:
-                best_loss = avg_loss
-                best_model = self.state_dict()
+            if best_trial['loss'] < best_loss:
+                best_loss = best_trial['loss']
+                best_model = best_trial['model_state']
                 best_architecture = architecture
+                best_optimization_result = best_trial['optimization_result']
         
         # Load the best model
         self.load_state_dict(best_model)
-        print("Best model equation before optimization:")
-        print(self.get_equation())
         
-        # Perform final parameter optimization if requested
-        optimization_result = None
-        if optimize_final:
-            print("\nPerforming final parameter optimization...")
-            # Collect all data from the DataLoader
-            x_data, y_data = [], []
-            for data, target in train_loader:
-                x_data.append(data)
-                y_data.append(target)
-            x_data = torch.cat(x_data, dim=0)
-            y_data = torch.cat(y_data, dim=0)
-            
-            # Run optimization
-            optimization_result = self.optimize_parameters(
-                x_data, y_data,
-                method=optimization_method,
-                options=optimization_options
-            )
-            print("Parameter optimization complete.")
-            print(f"Final loss: {optimization_result.fun:.6f}")
-            
-            # Compare losses and decide whether to keep the optimized model
-            if optimization_result.fun < best_loss:
-                print("Optimized model has a lower loss. Keeping the optimized model.")
-                best_loss = optimization_result.fun  # Update best_loss to the optimized loss
-            else:
-                print("Best model loss is lower than the optimized model. Reverting to the best model.")
-                self.load_state_dict(best_model)  # Revert to the best model if optimization did not improve
-
-        return self, best_loss, best_architecture, optimization_result
+        return self, best_loss, best_architecture, best_optimization_result
 
     def __str__(self):
         """Print a structured representation of the model with connectivity information."""
@@ -1002,3 +1133,58 @@ class ConnectivityEQLModel(EQLModel):
             })
 
         return param_groups
+
+    def evaluate_model(self, val_loader):
+        """
+        Evaluate the model on a validation dataset.
+        
+        Args:
+            val_loader: PyTorch DataLoader containing validation data
+            
+        Returns:
+            float: Average loss (MSE) on the validation set
+        """
+        self.eval()  # Set model to evaluation mode
+        total_loss = 0.0
+        criterion = nn.MSELoss(reduction='sum')
+        
+        with torch.no_grad():  # Disable gradient computation
+            for data, target in val_loader:
+                # Forward pass
+                output = self(data)
+                # Compute loss
+                loss = criterion(output, target)
+                total_loss += loss.item()
+        
+        # Compute average loss
+        avg_loss = total_loss / len(val_loader.dataset)
+        
+        return avg_loss
+
+    def get_all_data(self, data_loader):
+        """
+        Extract all data from a DataLoader and return as input-output pairs.
+        
+        Args:
+            data_loader: PyTorch DataLoader containing the dataset
+            
+        Returns:
+            tuple: (x_data, y_data) where:
+                - x_data is a numpy array of input features
+                - y_data is a numpy array of target values
+        """
+        x_list = []
+        y_list = []
+        
+        # Iterate through the DataLoader
+        with torch.no_grad():
+            for inputs, targets in data_loader:
+                # Convert to numpy and store
+                x_list.append(inputs.numpy())
+                y_list.append(targets.numpy())
+        
+        # Concatenate all batches
+        x_data = np.concatenate(x_list, axis=0)
+        y_data = np.concatenate(y_list, axis=0)
+        
+        return x_data, y_data

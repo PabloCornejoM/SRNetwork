@@ -1,9 +1,15 @@
+import sys
+from pathlib import Path
+
+project_root = str(Path(__file__).parent.parent.parent)
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 import torch
 import numpy as np
-from models import EQLModel, ConnectivityEQLModel
-from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
+from src.models.eql_model import EQLModel, ConnectivityEQLModel
+from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
-
 
 # Define the hypothesis set of unary functions
 hyp_set = [
@@ -21,16 +27,16 @@ hyp_set = [
 input_size = 1
 output_size = 1
 hidden_dim = [[2], []] # it is the output size of each neurons in each layer
-num_layers = 4 # hidden + 1 output
+num_layers = 3 # hidden + 1 output
 nonlinear_info = [ # it is the number of neurons in each layer
     (2, 0),  # Layer 1: 4 unary, 4 binary functions
     (2, 0),  # Layer 2
-    (1, 1)   # Layer 3
+    (0, 0)   # Layer 3
 ]
 
 # Create synthetic data
 x_values = np.linspace(0, 1, 1000)
-y_values = np.sin(x_values**2)* np.cos(x_values) - 1 # Example function: y = x^2
+y_values = np.sin(x_values**2 + x_values) + np.sin(x_values)# Example function: y = x^2
 
 # Convert to PyTorch tensors
 X = torch.tensor(x_values, dtype=torch.float32).reshape(-1, 1)
@@ -59,7 +65,7 @@ best_model, best_loss, best_architecture, opt_result = model.train_all_architect
     num_epochs=100,
     max_architectures=10,
     optimize_final=True,  # Enable parameter optimization
-    optimization_method='Powell',
+    optimization_method='Nelder-Mead',
     optimization_options={
         'maxiter': 1000,
         'disp': True,

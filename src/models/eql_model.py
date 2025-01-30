@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from classes import EqlLayer, Connected, MaskedEqlLayer, MaskedConnected
 
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -11,7 +10,8 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 
 import sympy
-from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
+from src.models.classes import EqlLayer, Connected, MaskedEqlLayer, MaskedConnected
+from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
 
 
 def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0.001,
