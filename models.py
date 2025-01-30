@@ -12,8 +12,6 @@ import numpy as np
 
 import sympy
 from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
-from trainning import train_model_c
-
 
 
 def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0.001,

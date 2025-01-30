@@ -1,0 +1,27 @@
+# General configuration
+project_name: "your_project_name"
+random_seed: 42
+
+# Data configuration
+data:
+  train_path: "data/processed/train"
+  val_path: "data/processed/val"
+  test_path: "data/processed/test"
+  batch_size: 32
+  num_workers: 4
+
+# Model configuration
+model:
+  type: "your_model_type"
+  hidden_size: 256
+  num_layers: 4
+  dropout: 0.1
+
+# Training configuration
+training:
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.01
+  scheduler_step_size: 30
+  scheduler_gamma: 0.1
+  device: "cuda" 
