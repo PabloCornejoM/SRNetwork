@@ -11,9 +11,9 @@ import numpy as np
 
 import sympy
 import sympy as sp
+import itertools
 from src.models.classes import EqlLayer, Connected, MaskedEqlLayer, MaskedConnected
 from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
-
 
 def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0.001,
                     reg_strength=1e-3, threshold=0.1, logger=None, decimal_penalty=0.01):
@@ -438,8 +438,8 @@ class ConnectivityEQLModel(EQLModel):
         import itertools
 
         def is_valid_pattern(matrix):
-            return (self._has_minimum_connections(matrix, min_connections, source_neurons, target_neurons) and
-                    self._check_safe_power_constraint(matrix, target_neurons))
+            return (self._has_minimum_connections(matrix, min_connections, source_neurons, target_neurons))
+        """ and self._check_safe_power_constraint(matrix, target_neurons))"""
 
         patterns = []
         for edges in range(min_connections * max(source_neurons, target_neurons), source_neurons * target_neurons + 1):
@@ -493,11 +493,11 @@ class ConnectivityEQLModel(EQLModel):
             List of connectivity patterns for each valid architecture
         """
         layer_sizes = self.get_layer_sizes()
-        layer_patterns = [self._generate_patterns_for_layers(layer_sizes[i], layer_sizes[i + 1], i) 
+        layer_patterns = [self._generate_patterns_for_layers(layer_sizes[i], layer_sizes[i + 1], i, max_patterns_per_layer) 
                           for i in range(len(layer_sizes) - 1)]
         return list(itertools.product(*layer_patterns))
 
-    def _generate_patterns_for_layers(self, source_size, target_size, layer_index):
+    def _generate_patterns_for_layers(self, source_size, target_size, layer_index, max_patterns_per_layer):
         patterns = self.generate_valid_patterns(source_size, target_size, self.min_connections_per_neuron, 
                                                  last=int(layer_index == len(self.nonlinear_info) - 1))
         if max_patterns_per_layer and len(patterns) > max_patterns_per_layer:

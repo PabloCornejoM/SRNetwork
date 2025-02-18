@@ -1,0 +1,6 @@
+Collecting bitsandbytes
+  Downloading bitsandbytes-0.45.2-py3-none-manylinux_2_24_x86_64.whl (69.7 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 69.7/69.7 MB 4.4 MB/s eta 0:00:00
+Collecting torch<3,>=2.0
+  Downloading torch-2.6.0-cp310-cp310-manylinux1_x86_64.whl (766.7 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━    718.3/766.7 MB 111.3 MB/s eta 0:00:01

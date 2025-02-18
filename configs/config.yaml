@@ -8,7 +8,7 @@ data:
   val_path: "data/processed/val"
   test_path: "data/processed/test"
   batch_size: 32
-  num_workers: 4
+  num_workers: 7
 
 # Model configuration
 model:

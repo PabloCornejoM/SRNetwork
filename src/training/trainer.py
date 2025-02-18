@@ -32,11 +32,24 @@ class Trainer:
             lr=self.config['training']['learning_rate']
         )
         
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer,
-            T_max=self.config['training']['num_epochs'],
-            eta_min=1e-6
-        )
+        scheduler_type = self.config['training'].get('scheduler', 'cosine')
+        
+        if scheduler_type == 'cosine':
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=self.config['training']['num_epochs'],
+                eta_min=1e-6
+            )
+        elif scheduler_type == 'cyclic':
+            self.scheduler = torch.optim.lr_scheduler.CyclicLR(
+                self.optimizer,
+                base_lr=0.01,
+                max_lr=1.0,
+                step_size_up=500,
+                mode='triangular'
+            )
+        elif scheduler_type == 'progressive':
+            self.scheduler = None  # Handle progressive LR updates manually
         
         self.criterion = torch.nn.MSELoss(reduction='sum')
         self.writer = SummaryWriter(log_dir='logs/tensorboard')
@@ -104,7 +117,7 @@ class Trainer:
         """Main training loop."""
         num_epochs = self.config['training']['num_epochs']
         reg_strength = self.config['training']['reg_strength']
-        decimal_penalty = self.config['training'].get('decimal_penalty', 0.01)
+        decimal_penalty = self.config['training'].get('decimal_penalty', 0.01)*0
         
         print("Starting training with regularization")
         for epoch in range(num_epochs):
@@ -116,7 +129,17 @@ class Trainer:
             else:
                 print(f"Epoch {epoch + 1}/{num_epochs} - Train Loss: {train_loss:.6f}")
                 
-            self.scheduler.step()
+            #self.scheduler.step()
+            """if epoch == 1000:
+                self.optimizer = torch.optim.Adam(
+                                    self.model.parameters(),
+                                    lr=0.1
+                )
+            if epoch == 1300:
+                self.optimizer = torch.optim.Adam(
+                                    self.model.parameters(),
+                                    lr=1
+                )"""
             
         # Print equation history
         for epoch, data in self.equation_history.items():

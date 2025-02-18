@@ -11,15 +11,19 @@ add_project_root_to_sys_path()
 
 import torch
 import numpy as np
+import pytorch_lightning as pl
 from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from src.training.trainer import Trainer
+from src.training.connectivity_trainer import ConnectivityTrainer
 from src.utils.plotting import plot_results 
 from src.utils.data_utils import get_nguyen_data_loaders, generate_nguyen_data
-from src.models.model_initialization import initialize_model  # Import the new initialize_model function
-
-
+from src.models.model_initialization import initialize_model
+from src.train import train_model
 
 def main():
+    # Set random seeds for reproducibility
+    #pl.seed_everything(42)
+    
     # Define the hypothesis set of unary functions
     hyp_set = [
         SafeIdentityFunction(),
@@ -44,8 +48,13 @@ def main():
     X, y = generate_nguyen_data('Nguyen-2')
 
     # Initialize model
-    model = initialize_model(input_size, output_size, num_layers, hyp_set, nonlinear_info, min_connections_per_neuron=1, exp_n=2)
-
+    model = initialize_model(input_size, 
+                             output_size, 
+                             num_layers, 
+                             hyp_set, 
+                             nonlinear_info, 
+                             min_connections_per_neuron=1, 
+                             exp_n=2)
 
     # Training configuration
     config = {
@@ -54,33 +63,31 @@ def main():
             'learning_rate': 0.01,
             'reg_strength': 1e-3,
             'decimal_penalty': 0.01,
-            'scheduler_step_size': 500,
-            'scheduler_gamma': 0.5
+            'scheduler': 'progressive',  # One of: cosine, cyclic, progressive
+            # Connectivity training specific parameters
+            'use_connectivity_training': False,  # Set to False for classical training
+            'max_architectures': 10,
+            'max_patterns_per_layer': 5,
+            'num_parallel_trials': 1,
+            'precision': '32'
         }
     }
 
-    # Initialize trainer and train the model
+    # Train the model using Lightning
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    trainer = Trainer(
-        model=model, 
-        train_loader=train_loader, 
-        val_loader=val_loader, 
-        config=config, 
-        device=device
-    )
-    trainer.train()
+    trained_model = train_model(model, train_loader, val_loader, config, device)
 
     # Get the final equation and evaluate results
-    equation = model.get_equation()
+    equation = trained_model.get_equation()
     print(f"Final equation: {equation}")
 
     # Evaluate model
-    model.eval()
+    trained_model.eval()
     with torch.no_grad():
-        predictions = model(X.to(device))
+        predictions = trained_model(X.to(device))
         predictions = predictions.cpu()
 
-    plot_results(X, y, predictions)  # Call the imported function
+    plot_results(X, y, predictions)
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,5 @@
 Equation_name	in_f	Equation	min_range	max_range	n_points	sampling
-Nguyen-1	1	x[:, 0]**3 + x[:, 0]**2 +x[:,0]	-1	1	1000	Uniform
+Nguyen-1	1	x[:, 0]**3 + x[:, 0]**2 + x[:, 0]	-1	1	1500	Uniform
 Nguyen-2	1	x[:, 0]**4 + x[:, 0]**3 + x[:, 0]**2 +x[:,0]	-1	1	1000	Uniform
 Nguyen-3	1	x[:, 0]**5 + x[:, 0]**4 + x[:, 0]**3 + x[:, 0]**2 +x[:, 0]	-1	1	1000	Uniform
 Nguyen-4	1	x[:, 0]**6 + x[:, 0]**4 + x[:, 0]**3 + x[:, 0]**2 +x[:, 0]	-1	1	1000	Uniform

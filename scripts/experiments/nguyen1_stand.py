@@ -11,18 +11,17 @@ add_project_root_to_sys_path()
 
 import torch
 import numpy as np
-import pytorch_lightning as pl
 from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from src.training.trainer import Trainer
 from src.training.connectivity_trainer import ConnectivityTrainer
 from src.utils.plotting import plot_results 
 from src.utils.data_utils import get_nguyen_data_loaders, generate_nguyen_data
 from src.models.model_initialization import initialize_model
-from src.train import train_model
 
 def main():
     # Set random seeds for reproducibility
-    pl.seed_everything(42)
+    #torch.manual_seed(42)
+    #np.random.seed(42)
     
     # Define the hypothesis set of unary functions
     hyp_set = [
@@ -66,8 +65,6 @@ def main():
             'reg_strength': 1e-3,
             'decimal_penalty': 0.01,
             'scheduler': 'progressive',  # One of: cosine, cyclic, progressive
-            # Precision settings
-            'precision': '16-mixed',  # Options: "32" (default), "16-mixed", "bf16-mixed", "8"
             # Connectivity training specific parameters
             'use_connectivity_training': False,  # Set to False for classical training
             'max_architectures': 10,
@@ -76,9 +73,32 @@ def main():
         }
     }
 
-    # Train the model using Lightning
+    # Train the model using original trainer
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    trained_model = train_model(model, train_loader, val_loader, config, device)
+    
+    if config['training'].get('use_connectivity_training', False):
+        trainer = ConnectivityTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            config=config,
+            device=device
+        )
+        trained_model, _, _, _ = trainer.train_all_architectures(
+            max_architectures=config['training'].get('max_architectures'),
+            max_patterns_per_layer=config['training'].get('max_patterns_per_layer'),
+            num_parallel_trials=config['training'].get('num_parallel_trials', 3)
+        )
+    else:
+        trainer = Trainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            config=config,
+            device=device
+        )
+        trainer.train()
+        trained_model = model
 
     # Get the final equation and evaluate results
     equation = trained_model.get_equation()

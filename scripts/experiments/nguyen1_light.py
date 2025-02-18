@@ -22,7 +22,7 @@ from src.train import train_model
 
 def main():
     # Set random seeds for reproducibility
-    pl.seed_everything(42)
+    #pl.seed_everything(42)
     
     # Define the hypothesis set of unary functions
     hyp_set = [
@@ -66,13 +66,12 @@ def main():
             'reg_strength': 1e-3,
             'decimal_penalty': 0.01,
             'scheduler': 'progressive',  # One of: cosine, cyclic, progressive
-            # Precision settings
-            'precision': '16-mixed',  # Options: "32" (default), "16-mixed", "bf16-mixed", "8"
             # Connectivity training specific parameters
             'use_connectivity_training': False,  # Set to False for classical training
             'max_architectures': 10,
             'max_patterns_per_layer': 5,
-            'num_parallel_trials': 1
+            'num_parallel_trials': 1,
+            'precision': '32'
         }
     }
 
@@ -93,4 +92,4 @@ def main():
     plot_results(X, y, predictions)
 
 if __name__ == "__main__":
-    main() 
+    main()

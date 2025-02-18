@@ -1,0 +1,7 @@
+training:
+  use_connectivity_training: false  # Set to true to use connectivity-based training
+  max_architectures: 10  # Maximum number of architectures to try
+  max_patterns_per_layer: 5  # Maximum number of patterns per layer
+  num_parallel_trials: 3  # Number of parallel trials per architecture
+  scheduler: "cosine"  # One of: cosine, cyclic, progressive
+  # ... other training parameters ... 
