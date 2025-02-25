@@ -62,7 +62,7 @@ def main():
         'training': {
             'num_epochs': 1500,
             'learning_rate': 0.01,
-            'reg_strength': 1e-3,
+            'reg_strength': 1,
             'decimal_penalty': 0.01,
             'scheduler': 'progressive',  # One of: cosine, cyclic, progressive
             # Connectivity training specific parameters

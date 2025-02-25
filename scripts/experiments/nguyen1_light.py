@@ -71,7 +71,7 @@ def main():
             'max_architectures': 10,
             'max_patterns_per_layer': 5,
             'num_parallel_trials': 1,
-            'precision': '32'
+            'precision': '32' # Can be "16", "16-mixed", "bf16", "bf16-mixed", "32", "64"
         }
     }
 

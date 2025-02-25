@@ -21,8 +21,6 @@ def train_model(model, train_loader, val_loader, config, device):
     Returns:
         The trained model
     """
-    # Create Lightning trainer with specified configuration
-    precision = config['training'].get('precision', '32')  # Default to 32-bit
     
     trainer_config = {
         'max_epochs': config['training']['num_epochs'],
@@ -32,8 +30,8 @@ def train_model(model, train_loader, val_loader, config, device):
         'enable_checkpointing': True,
         'enable_progress_bar': False,  # Disable default progress bar
         
-        # Precision settings
-        'precision': precision,  # Can be "16", "16-mixed", "bf16", "bf16-mixed", "32", "64"
+        # Precision settings # Create Lightning trainer with specified configuration
+        'precision': config['training'].get('precision', '32'),  # Default to 32-bit,  
         
         # For 8-bit training (if using precision="8")
         'plugins': [pl.plugins.precision.BitsandbytesPrecision(mode="bf16-mixed")] if precision == "8" else None,

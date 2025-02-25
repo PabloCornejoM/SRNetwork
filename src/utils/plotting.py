@@ -22,5 +22,5 @@ def plot_results(x_values, y_values, predictions):
     plt.xlabel('x')
     plt.ylabel('y')
     plt.grid(True)
-    plt.pause(0.001)
+    #plt.pause(0.001)
     plt.show() 
