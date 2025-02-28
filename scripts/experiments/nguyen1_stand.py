@@ -23,16 +23,15 @@ def main():
     #torch.manual_seed(42)
     #np.random.seed(42)
     
-    # Define the hypothesis set of unary functions
-    hyp_set = [
-        SafeIdentityFunction(),
-        torch.sin,
-        torch.cos,
-        SafeLog(),
-        SafeExp(),
-        SafeSin(),
-        SafePower()
-    ]
+    # Define the set of functions
+    function_set = {
+            "identity": SafeIdentityFunction,
+            "exp": SafeExp,
+            "log": SafeLog,
+            "sin": SafeSin,
+            "power": SafePower(),
+            # Idea: Add "x" function just to know x in the layer
+        }
 
     # Model configuration
     input_size = 1  # Nguyen-1 is a single input function
@@ -51,10 +50,10 @@ def main():
         input_size, 
         output_size, 
         num_layers, 
-        hyp_set, 
+        function_set, 
         nonlinear_info, 
         min_connections_per_neuron=1, 
-        exp_n=1
+        #exp_n=1
     )
 
     # Training configuration

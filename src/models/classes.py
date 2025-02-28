@@ -107,22 +107,22 @@ class EqlLayer(Connected):
         node_info: tuple (u, v), where:
             u: number of unary functions
             v: number of binary functions
-        hyp_set: list of unary PyTorch functions to be used
-        unary_funcs: list of indices specifying which functions from hyp_set to use
+        function_set: list of unary PyTorch functions to be used
+        unary_funcs: list of indices specifying which functions from function_set to use
         init_stddev: float, standard deviation for weight initialization
         regularization: float, L1 regularization coefficient
     """
-    def __init__(self, input_size, node_info, hyp_set, unary_funcs, 
+    def __init__(self, input_size, node_info, function_set, unary_funcs, 
                  init_stddev=None, regularization=0.0):
         u, v = node_info
         output_size = u + 2 * v
         
-        # Get the function classes from hyp_set based on unary_funcs indices
+        # Get the function classes from function_set based on unary_funcs indices
         self.function_classes = []
         for func_idx in unary_funcs:
-            self.function_classes.append(hyp_set[func_idx])
-            #if inspect.isclass(hyp_set[func_idx]):  # Check if it's a class
-                #function_classes.append(hyp_set[func_idx])
+            self.function_classes.append(function_set[func_idx])
+            #if inspect.isclass(function_set[func_idx]):  # Check if it's a class
+                #function_classes.append(function_set[func_idx])
             #else:
                 #function_classes.append(None)
         
@@ -134,7 +134,7 @@ class EqlLayer(Connected):
             function_classes=self.function_classes
         )
         self.node_info = node_info
-        self.hyp_set = hyp_set
+        self.function_set = function_set
         self.unary_funcs = unary_funcs
         #self.hidden_dim = hidden_dim
 
@@ -150,7 +150,7 @@ class EqlLayer(Connected):
         current_index = 0
         
         for i in range(u):
-            func = self.hyp_set[self.unary_funcs[i]]
+            func = self.function_set[self.unary_funcs[i]]
             num_nodes = 1
 
             if isinstance(func, SafeIdentityFunction):
@@ -285,18 +285,18 @@ class MaskedEqlLayer(EqlLayer):
             u: number of unary functions
             v: number of binary functions
         hidden_dim: list of integers specifying number of nodes for each unary function
-        hyp_set: list of unary PyTorch functions to be used
-        unary_funcs: list of indices specifying which functions from hyp_set to use
+        function_set: list of unary PyTorch functions to be used
+        unary_funcs: list of indices specifying which functions from function_set to use
         connectivity_mask: Optional binary matrix specifying allowed connections
         init_stddev: float, standard deviation for weight initialization
         regularization: float, L1 regularization coefficient
     """
-    def __init__(self, input_size, node_info, hyp_set, unary_funcs,
+    def __init__(self, input_size, node_info, function_set, unary_funcs,
                  connectivity_mask=None, init_stddev=None, regularization=0.0):
         super(MaskedEqlLayer, self).__init__(
             input_size=input_size,
             node_info=node_info,
-            hyp_set=hyp_set,
+            function_set=function_set,
             unary_funcs=unary_funcs,
             init_stddev=init_stddev,
             regularization=regularization

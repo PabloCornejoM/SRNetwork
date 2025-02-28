@@ -34,7 +34,7 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
     #optimizer = torch.optim.RMSprop(model.parameters(), lr=0.01) 
     #optimizer = torch.optim.a
     
-    #optimizer = torch.optim.Adam(model.get_opt_dict())
+    #optimizer = torch.optim.Adam(model.get_selfopt_dict())
     criterion = nn.MSELoss(reduction='sum')
     #scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
     
@@ -47,7 +47,7 @@ def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0
     #scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=2, epochs = num_epochs, steps_per_epoch=len(train_loader))
 
     early_threshold = 0.1
-    SSA = False
+    SSA = Falseself
     soft_best = False
     #metrics = [MSE(), NRMSE(), R2()]
     #train_model_c(model, train_loader, val_loader, optimizer, criterion, reg_strength, num_epochs, early_threshold, logger, SSA, soft_best)
@@ -187,85 +187,113 @@ def train_epoch(model, train_loader, optimizer, criterion, reg_strength, epoch=0
 
 
 
-class EQLModel(nn.Module):
+class SRNetwork(nn.Module):
     """
-    EQL function learning network in PyTorch.
+    SRNetwork function learning network in PyTorch.
 
     Arguments:
         input_size: number of input variables to model. Integer.
         output_size: number of variables outputted by model. Integer.
         num_layers: number of layers in model.
-        hyp_set: list of PyTorch functions and their sympy equivalents for equation extraction
+        fucntion_set: list of PyTorch functions for equation extraction
         nonlinear_info: list of (u,v) tuples for each hidden layer
         name: model name for identification
     """
     
     def __init__(self, input_size, output_size, num_layers=4, 
-                 hyp_set=None, nonlinear_info=None, name='EQL', exp_n=1, functions=None):
-        super(EQLModel, self).__init__()
+                 function_set=None, nonlinear_info=None, 
+                 name='SRNetwork', exp_n=None):
+        super(SRNetwork, self).__init__()
         
+
+        # General parameters
         self.input_size = input_size
         self.output_size = output_size
         self.num_layers = num_layers
         self.name = name
-        self.exp_n = exp_n
-        self.torch_funcs = hyp_set
-        self.sympy_funcs = self._create_sympy_functions(hyp_set)
+        self.torch_funcs = function_set
         self.nonlinear_info = nonlinear_info
-        self.unary_functions = self._generate_unary_functions(num_layers - 1)
-        self.layers = self._build_layers(input_size, output_size)
+        self.exp_n = exp_n
+        self.sympy_funcs = self._create_sympy_functions(function_set)
 
-    def _create_sympy_functions(self, hyp_set):
+
+        if self.exp_n is None:
+            # We are in the GFN searching process
+            self.structure = self.initialize_funtions_structure()
+        
+        else:                    
+            # When not using GFN, we need to specify the experiment number
+            # And the functions to use
+            self.structure = self._generate_unary_functions(num_layers - 1)
+            self.layers = self._build_layers(input_size, output_size)
+
+
+    def initialize_funtions_structure(self):
+        """Initialize the functions structure for the GFN searching process.
+        
+        The nonlinear_info format is a list of tuples [(u1, b1), (u2, b2), ...] where:
+        - u1, u2 are the number of unary functions for each node
+        - b1, b2 are the number of binary functions for each node
+        
+        For example, if nonlinear_info = [(3, 1), (1, 2)]:
+        Returns: [[-1, -1, -1, -2], [-1, -2, -2]] where:
+        - -1 represents placeholder for unary functions
+        - -2 represents placeholder for binary functions
+        """
+        structure = []
+        
+        for unary_count, binary_count in self.nonlinear_info:
+            # Create node functions: unary functions (-1) followed by binary functions (-2)
+            node_functions = ([-1] * unary_count) + ([-2] * binary_count)
+            structure.append(node_functions)
+        
+        return structure
+
+
+    
+    def _create_sympy_functions(self, function_set):
         """Create corresponding sympy functions from the provided PyTorch functions."""
         sympy_funcs = []
-        for f in hyp_set:
-            if isinstance(f, torch.nn.Identity):
+        for f in function_set:
+            if f == "identity":
                 sympy_funcs.append(sympy.Id)
-            elif f == torch.sin:
+            elif f == "sin":
                 sympy_funcs.append(sympy.sin)
-            elif f == torch.cos:
+            elif f == "cos":
                 sympy_funcs.append(sympy.cos)
-            elif isinstance(f, (SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower)):
-                sympy_funcs.append(SYMPY_MAPPING[f.__class__])
+            elif f == "log":
+                sympy_funcs.append(sympy.log)
+            elif f == "exp":
+                sympy_funcs.append(sympy.exp)
+            elif f == "power":
+                sympy_funcs.append(sympy.Pow)
             else:
                 raise ValueError(f"Unknown function type: {type(f)}")
         return sympy_funcs
+    
 
     def _generate_unary_functions(self, num_layers):
         """Generate unary functions list based on the experiment number."""
         if self.exp_n in {1, 2, 3, 4, 12}:
-            return [[6, 6, 6, 6, 6, 6]]
+            return [["power", "power", "power", "power", "power", "power"]]
         elif self.exp_n == 5:
             raise ValueError("This is not a valid experiment number yet")
         elif self.exp_n == 6:
-            return [[0, 6], [5, 5]]
+            return [["identity", "power"], ["log", "log"]]
         elif self.exp_n == 7:
-            return [[0, 6], [3, 3]]
+            return [["identity", "power"], ["sin", "sin"]]
         elif self.exp_n == 8:
-            return [[6]]
+            return [["power", "power"], ["log", "log"]]
         elif self.exp_n == 9:
-            return [[0, 6], [5, 5]]
+            return [["identity", "power"], ["log", "log"]]
         elif self.exp_n in {10, 11}:
             raise ValueError("This is not a valid experiment number yet")
         elif self.exp_n == 99:
-            return [[0], [5], [3]]
-        elif functions is not None:
-            return self._map_functions_to_unary(functions)
+            return [["identity"], ["sin"], ["log"]]
         else:
             return [[j % len(self.torch_funcs) for j in range(self.nonlinear_info[i][0])]
                     for i in range(num_layers)]
 
-    def _map_functions_to_unary(self, functions):
-        """Map provided functions to their corresponding unary function indices."""
-        unary_functions = [[], [], []]
-        for i, item in enumerate(functions):
-            if item == "id":
-                unary_functions[i] = [0]
-            elif item == "log":
-                unary_functions[i] = [5]
-            elif item == "sin":
-                unary_functions[i] = [3]
-        return unary_functions
 
     def _build_layers(self, input_size, output_size):
         """Build the layers of the model."""
@@ -279,8 +307,8 @@ class EQLModel(nn.Module):
             layer = EqlLayer(
                 input_size=inp_size,
                 node_info=(u, v),
-                hyp_set=self.torch_funcs,
-                unary_funcs=self.unary_functions[i],
+                function_set=self.torch_funcs,
+                unary_funcs=self.structure[i],
                 init_stddev=stddev
             )
             layers.append(layer)
@@ -347,6 +375,8 @@ class EQLModel(nn.Module):
         elif isinstance(func, SafeIdentityFunction):
             return X[0, 0]
         else:
+            # Here its the linear combination of the input variables applied to the function
+            # must need to be implemented
             func_idx = layer.unary_funcs[current_index]
             x_term = sum(W[current_index, k] * X[k, 0] for k in range(X.rows))
             return self.sympy_funcs[func_idx](x_term)
@@ -379,7 +409,7 @@ class EQLModel(nn.Module):
         
         for i, layer in enumerate(self.layers):
             model_str += f"Layer {i+1} (EqlLayer):\n  Unary nodes: {layer.node_info[0]}\n  Binary nodes: {layer.node_info[1]}\n  Unary functions used:\n"
-            model_str += "\n".join(f"    Node {j+1}: {self.torch_funcs[func_idx].__class__.__name__ if isinstance(self.torch_funcs[func_idx], torch.nn.Module) else self.torch_funcs[func_idx].__name__}" for j, func_idx in enumerate(self.unary_functions[i])) + "\n\n"
+            model_str += "\n".join(f"    Node {j+1}: {self.torch_funcs[func_idx].__class__.__name__ if isinstance(self.torch_funcs[func_idx], torch.nn.Module) else self.torch_funcs[func_idx].__name__}" for j, func_idx in enumerate(self.structure[i])) + "\n\n"
         
         model_str += f"Output Layer:\n  Linear transformation: {self.output_layer.input_size} -> {self.output_layer.output_size}\n"
         
@@ -410,17 +440,17 @@ class EQLModel(nn.Module):
         return torch.tensor(np.mean(1 - np.exp(-5 * distances)), device=param.device, dtype=param.dtype)
 
 
-class ConnectivityEQLModel(EQLModel):
+class ConnectivitySRNetwork(SRNetwork):
     """
-    Extended EQL model that supports exploring different connectivity patterns between layers.
+    Extended SRNetwork model that supports exploring different connectivity patterns between layers.
     """
     def __init__(self, input_size, output_size, num_layers=4,
-                 hyp_set=None, nonlinear_info=None, name='ConnectivityEQL',
-                 min_connections_per_neuron=1, exp_n=1, functions=None):
+                 function_set=None, nonlinear_info=None, name='ConnectivitySRNetwork',
+                 min_connections_per_neuron=1, exp_n=1):
         super().__init__(input_size=input_size, output_size=output_size,
-                         num_layers=num_layers, hyp_set=hyp_set,
+                         num_layers=num_layers, function_set=function_set,
                          nonlinear_info=nonlinear_info, exp_n=exp_n, 
-                         name=name, functions=functions)
+                         name=name)
         self.min_connections_per_neuron = min_connections_per_neuron
 
     def generate_valid_patterns(self, source_neurons, target_neurons, min_connections=1, last=0):
@@ -459,8 +489,8 @@ class ConnectivityEQLModel(EQLModel):
 
     def _check_safe_power_constraint(self, matrix, target_neurons):
         for i in range(target_neurons):
-            if (i < len(self.unary_functions[0]) and
-                isinstance(self.torch_funcs[self.unary_functions[0][i]], SafePower)):
+            if (i < len(self.structure[0]) and
+                isinstance(self.torch_funcs[self.structure[0][i]], SafePower)):
                 connections = sum(matrix[i][j] for j in range(len(matrix)))
                 if connections > 1:
                     return False
@@ -520,8 +550,8 @@ class ConnectivityEQLModel(EQLModel):
             out_size = u + 2 * v
             stddev = np.sqrt(1.0 / (inp_size * out_size))
             layer = MaskedEqlLayer(input_size=inp_size, node_info=(u, v),
-                                    hyp_set=self.torch_funcs, 
-                                    unary_funcs=self.unary_functions[i],
+                                    function_set=self.torch_funcs, 
+                                    unary_funcs=self.structure[i],
                                     init_stddev=stddev, 
                                     connectivity_mask=connectivity_patterns[i])
             self.layers.append(layer)

@@ -25,15 +25,14 @@ def main():
     pl.seed_everything(42)
     
     # Define the hypothesis set of unary functions
-    hyp_set = [
-        SafeIdentityFunction(),
-        torch.sin,
-        torch.cos,
-        SafeLog(),
-        SafeExp(),
-        SafeSin(),
-        SafePower()
-    ]
+    hyp_set = {
+            "identity": SafeIdentityFunction,
+            "exp": SafeExp,
+            "log": SafeLog,
+            "sin": SafeSin,
+            "power": SafePower(),
+            # Idea: Add "x" function just to know x in the layer
+        }
 
     # Model configuration
     input_size = 1  # Nguyen-1 is a single input function
