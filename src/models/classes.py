@@ -159,24 +159,30 @@ class EqlLayer(Connected):
             
             elif isinstance(func, SafePower):
                 # Special handling for SafePower
-                #print("self.sign_params", self.sign_params)
-                #segment_output = func(x)
+                # Clip parameters before forward pass
 
-                print("banana")
-                ## Lets here try to apply a mask, this is just a test done to 
-                # see if I can make N12 to run. 
+                #print(banana)
+
+
+                #func.clip_parameters()
+                
                 try:
                     # Create a binary mask tensor to control which inputs each neuron can connect to
-                    mask = torch.tensor([[1, 0], [1, 0], [0, 1], [0, 1]], dtype=torch.float32)
+                    mask = torch.tensor([[1, 0], [0, 1]], dtype=torch.float32)
                     
                     # Convert mask to a parameter if we want to learn it during training
                     self.mask = torch.nn.Parameter(mask, requires_grad=False)
+                    
+                    self.W.data.clamp_(1.0, 6.0)
                     
                     # Apply mask to weights to enforce connectivity pattern
                     masked_weights = self.W * self.mask
                     
                     # Update weights with masked version
                     self.W.data = masked_weights.data
+
+                    self.W.data.clamp_(1.0, 6.0)
+                    
                 
                 except: 
                     pass

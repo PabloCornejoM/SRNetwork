@@ -181,7 +181,8 @@ class SafePower(BaseSafeFunction):
     def clip_parameters(self):
         """Clip parameters to reasonable ranges"""
         with torch.no_grad():
-            self.weight.data.clamp_(-4.0, 6.0)
+            self.weight.data.clamp_(1.0, 6.0)
+            print("weight", self.weight.data)
 
     def get_sympy_expression(self, x):
         """Helper method to generate sympy expression for symbolic representation"""

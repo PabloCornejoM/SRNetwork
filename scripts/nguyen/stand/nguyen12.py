@@ -37,7 +37,7 @@ def main():
     input_size = 2
     output_size = 1
     num_layers = 2
-    nonlinear_info = [(4, 0), (0, 0), (0, 0)]
+    nonlinear_info = [(2, 0), (0, 0), (0, 0)]
 
     # Get data loaders using the new utility function
     train_loader, val_loader = get_nguyen_data_loaders('Nguyen-12', batch_size=64)

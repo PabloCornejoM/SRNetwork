@@ -16,7 +16,7 @@ import numpy as np
 from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from src.training.trainer import Trainer
 from src.training.connectivity_trainer import ConnectivityTrainer
-from src.utils.plotting import plot_results 
+from src.utils.plotting import plot_results
 from src.utils.data_utils import get_nguyen_data_loaders, generate_nguyen_data
 from src.models.model_initialization import initialize_model
 

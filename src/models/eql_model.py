@@ -370,9 +370,13 @@ class SRNetwork(nn.Module):
     def _apply_unary_function(self, X, W, func, sign_params, current_index):
         """Apply a unary function to the input and return the result."""
         if isinstance(func, SafePower):
-            print("we re here")
-            x_term = X[0, 0]
-            return (x_term) ** W[current_index]
+            # For power function, we need to handle each input dimension separately
+            result = 0
+            for j in range(X.shape[1]):
+                if abs(W[current_index, j]) > 1e-10:  # Only consider non-zero weights
+                    result += (X[0, j]) ** W[current_index, j]
+            return result
+        
         elif isinstance(func, SafeIdentityFunction):
             return X[0, 0]
         else:
