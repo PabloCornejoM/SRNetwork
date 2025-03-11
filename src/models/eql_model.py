@@ -289,7 +289,7 @@ class SRNetwork(nn.Module):
         elif self.exp_n in {10, 11}:
             raise ValueError("This is not a valid experiment number yet")
         elif self.exp_n == 99:
-            return [["identity"], ["sin"], ["log"]]
+            return [["sin"]]
         else:
             return [[j % len(self.torch_funcs) for j in range(self.nonlinear_info[i][0])]
                     for i in range(num_layers)]
@@ -370,16 +370,28 @@ class SRNetwork(nn.Module):
     def _apply_unary_function(self, X, W, func, sign_params, current_index):
         """Apply a unary function to the input and return the result."""
         if isinstance(func, SafePower):
+            print("we re here")
             x_term = X[0, 0]
             return (x_term) ** W[current_index]
         elif isinstance(func, SafeIdentityFunction):
             return X[0, 0]
         else:
-            # Here its the linear combination of the input variables applied to the function
-            # must need to be implemented
-            func_idx = layer.unary_funcs[current_index]
-            x_term = sum(W[current_index, k] * X[k, 0] for k in range(X.rows))
-            return self.sympy_funcs[func_idx](x_term)
+            # Handle other unary functions (log, exp, sin)
+            # Get the linear combination of inputs using the weights
+            x_term = sum(W[current_index, j] * X[0, j] for j in range(X.shape[1]))
+            
+            # Get the function name from the function class
+            func_name = func.__class__.__name__.lower().replace('safe', '')
+            
+            # Map the function name to the corresponding sympy function
+            if func_name == 'exp':
+                return self.sympy_funcs[1](x_term)  # exp
+            elif func_name == 'log':
+                return self.sympy_funcs[2](x_term)  # log
+            elif func_name == 'sin':
+                return self.sympy_funcs[3](x_term)  # sin
+            else:
+                raise ValueError(f"Unknown function type: {func_name}")
 
     def _simplify_equation(self, X):
         """Simplify the learned equation and return it as a string."""
