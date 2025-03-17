@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn.parameter import Parameter
 from torch.distributions import Categorical
-from .log import Log
+from log import Log
 
 
 class GFlowNet(nn.Module):

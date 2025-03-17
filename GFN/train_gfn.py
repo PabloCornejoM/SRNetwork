@@ -2,14 +2,23 @@ import torch
 import argparse
 
 import matplotlib.pyplot as plt
-from gflownet.env.sr_env import SRTree
-from gflownet import GFlowNet, trajectory_balance_loss
+from gflownet import GFlowNet#, trajectory_balance_loss
 from tqdm import tqdm
+import sys
+from pathlib import Path
+
+# Ensure the project root is in the system path
+def add_project_root_to_sys_path():
+    project_root = str(Path(__file__).parent.parent)
+    if project_root not in sys.path:
+        sys.path.append(project_root)
+
+add_project_root_to_sys_path()
 
 
 from functions import Functions
 
-from src.data.nguyen_data import get_nguyen_data_loaders, generate_nguyen_data
+from src.utils.data_utils import get_nguyen_data_loaders, generate_nguyen_data
 from src.models.eql_model import SRNetwork
 from policy import RNNForwardPolicy, CanonicalBackwardPolicy
 
@@ -17,7 +26,7 @@ from policy import RNNForwardPolicy, CanonicalBackwardPolicy
 
 def main():
     # Initialize the function set
-    functions = Functions()
+    functions = Functions().functions
 
     # Generate data from experiment
     train_loader, val_loader = get_nguyen_data_loaders('Nguyen-1', batch_size=64)
@@ -33,7 +42,7 @@ def main():
     nonlinear_info = [(3, 0), (0, 0), (0, 0)] # Network Structure
     env = SRNetwork(input_size, output_size, num_layers, functions, nonlinear_info) # Initialize the environment
 
-    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     forward_policy = RNNForwardPolicy(batch_size, 250, env.num_actions, 1, model="lstm", device=device)
     backward_policy = CanonicalBackwardPolicy(env.num_actions)
     model = GFlowNet(forward_policy, backward_policy, env)

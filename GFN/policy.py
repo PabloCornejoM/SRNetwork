@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from actions import get_next_node_indices
+from functions import get_next_node_indices
 
 """
 All the forward policies for GFlowNet. The `RNNForwardPolicy` contains implementations using vanilla RNN,

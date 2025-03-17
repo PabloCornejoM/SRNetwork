@@ -34,16 +34,16 @@ def main():
         }
 
     # Model configuration
-    input_size = 2
+    input_size = 1
     output_size = 1
     num_layers = 2
-    nonlinear_info = [(2, 0), (2, 0), (0, 0)]
+    nonlinear_info = [(3, 0), (1, 0), (0, 0)]
 
     # Get data loaders using the new utility function
-    train_loader, val_loader = get_nguyen_data_loaders('Nguyen-9', batch_size=64)
+    train_loader, val_loader = get_nguyen_data_loaders('Nguyen-7', batch_size=64)
     
     # Get the full dataset for plotting
-    X, y = generate_nguyen_data('Nguyen-9')
+    X, y = generate_nguyen_data('Nguyen-7')
 
     # Initialize model
     model = initialize_model(
@@ -53,7 +53,7 @@ def main():
         function_set, 
         nonlinear_info, 
         min_connections_per_neuron=1, 
-        exp_n=9
+        exp_n=71
     )
 
     # Training configuration

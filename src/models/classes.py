@@ -173,7 +173,7 @@ class EqlLayer(Connected):
                     # Convert mask to a parameter if we want to learn it during training
                     self.mask = torch.nn.Parameter(mask, requires_grad=False)
                     
-                    self.W.data.clamp_(1.0, 6.0)
+                    self.W.data.clamp_(0.0, 6.0)
                     
                     # Apply mask to weights to enforce connectivity pattern
                     masked_weights = self.W * self.mask
@@ -181,7 +181,7 @@ class EqlLayer(Connected):
                     # Update weights with masked version
                     self.W.data = masked_weights.data
 
-                    self.W.data.clamp_(1.0, 6.0)
+                    self.W.data.clamp_(0.0, 6.0)
                     
                 
                 except: 
@@ -189,6 +189,7 @@ class EqlLayer(Connected):
                 
                 segment_output = func(x, self.W[current_index], self.sign_params[current_index])  # Pass raw input x instead of transformed
                 outputs.append(segment_output)
+
             else:
                 # Regular handling for other functions
                 outputs.append(func(lin_output_t[current_index:current_index + num_nodes]).t())

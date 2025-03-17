@@ -3,7 +3,7 @@ from pathlib import Path
 
 # Ensure the project root is in the system path
 def add_project_root_to_sys_path():
-    project_root = str(Path(__file__).parent.parent.parent.parent)
+    project_root = str(Path(__file__).parent.parent.parent)
     if project_root not in sys.path:
         sys.path.append(project_root)
 
@@ -34,16 +34,16 @@ def main():
         }
 
     # Model configuration
-    input_size = 2
+    input_size = 1
     output_size = 1
     num_layers = 2
-    nonlinear_info = [(2, 0), (2, 0), (0, 0)]
+    nonlinear_info = [(1, 0), (0, 0), (0, 0)]
 
     # Get data loaders using the new utility function
-    train_loader, val_loader = get_nguyen_data_loaders('Nguyen-9', batch_size=64)
+    train_loader, val_loader = get_nguyen_data_loaders('toy-1', batch_size=64)
     
     # Get the full dataset for plotting
-    X, y = generate_nguyen_data('Nguyen-9')
+    X, y = generate_nguyen_data('toy-1')
 
     # Initialize model
     model = initialize_model(
@@ -53,7 +53,7 @@ def main():
         function_set, 
         nonlinear_info, 
         min_connections_per_neuron=1, 
-        exp_n=9
+        exp_n=1000
     )
 
     # Training configuration

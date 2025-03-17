@@ -285,10 +285,16 @@ class SRNetwork(nn.Module):
         elif self.exp_n == 8:
             return [["power", "power"], ["log", "log"]]
         elif self.exp_n == 9:
-            return [["identity", "power"], ["log", "log"]]
+            return [["identity", "power"], ["sin", "sin"]]
         elif self.exp_n in {10, 11}:
             raise ValueError("This is not a valid experiment number yet")
         elif self.exp_n == 99:
+            return [["sin"]]
+        elif self.exp_n == 101:
+            return [["sin", "sin"]]
+        elif self.exp_n == 71:
+            return [["power", "power", "power"], ["log"]]
+        elif self.exp_n == 1000:
             return [["sin"]]
         else:
             return [[j % len(self.torch_funcs) for j in range(self.nonlinear_info[i][0])]
