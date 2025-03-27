@@ -91,7 +91,7 @@ def main():
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    batch_size = 10  # Increased batch size for better statistics
+    batch_size = 1  # Increased batch size for better statistics
 
     # Initialize policies
     forward_policy = RNNForwardPolicy(
@@ -141,9 +141,9 @@ def main():
         
         # Sample states using GFlowNet
         states, log_probs, action_sequences, total_flow = model.sample_states(s0)
-        c
+        env.create_structure_model(states)
 
-        rewards = reward(env, train_loader, val_loader, config, device)
+        rewards = reward(states)
 
         log = Log(states, log_probs, rewards, total_flow)
         
@@ -167,7 +167,7 @@ def main():
             avg_mse, top_mse = evaluate_model(
                 env=env,
                 model=model,
-                eval_bs=batch_size,
+                eval_bs=10,
                 train_loader=train_loader,
                 val_loader=val_loader,
                 config=config,
@@ -194,22 +194,18 @@ def main():
 
 def evaluate_model(env, model, eval_bs: int = 20, top_quantile: float = 0.1, train_loader=None, val_loader=None, config=None, device=None, current_epoch=None):
     """
-    Evaluate the model by sampling states and calculating the MSE.
+    Evaluate the model by sampling states and calculating rewards based on power function count.
     
     Args:
         env: The environment/model being optimized
         model: The GFlowNet model
         eval_bs: Batch size for evaluation
-        top_quantile: Quantile for top MSE calculation
-        train_loader: Training data loader (optional)
-        val_loader: Validation data loader (optional)
-        config: Training configuration (optional)
-        device: Device to use for computation (optional)
+        top_quantile: Quantile for top reward calculation
         current_epoch: Current training epoch number
         
     Returns:
-        avg_mse: Median MSE of sampled states
-        top_mse: Top percentile MSE of sampled states
+        avg_reward: Median reward of sampled states
+        top_reward: Top percentile reward of sampled states
     """
     global best_reward_so_far, best_equation_so_far, best_equation_epoch
     
@@ -219,69 +215,95 @@ def evaluate_model(env, model, eval_bs: int = 20, top_quantile: float = 0.1, tra
     # Sample states
     eval_s, log_probs, action_sequences, total_flow = model.sample_states(eval_s0)
     
-    # Create models for each state
-    env.create_structure_model(eval_s)
-    
-    # Calculate rewards for each state
-    if train_loader is not None and val_loader is not None and config is not None and device is not None:
-        # Use the new reward system if all required parameters are provided
-        rewards = compute_reward(
-            model=env,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            config=config,
-            device=device,
-            reward_type='nrmse'
-        )
-    else:
-        # Fallback to old reward system if parameters are missing
-        rewards = env.reward(eval_s)
+    # Calculate rewards for each state using our toy reward function
+    rewards = reward(eval_s)
     
     # Filter out any invalid results
     rewards = rewards[torch.isfinite(rewards)]
     
     # Calculate statistics
-    avg_mse = torch.median(rewards)
-    top_mse = torch.quantile(rewards, q=top_quantile)
+    avg_reward = torch.median(rewards)
+    top_reward = torch.quantile(rewards, q=top_quantile)
     
-    # Track best equation
+    # Track best structure
     if current_epoch is not None:
         best_reward_in_batch = torch.max(rewards)
         if best_reward_in_batch > best_reward_so_far:
             best_reward_so_far = best_reward_in_batch
+            best_idx = torch.argmax(rewards)
+            
+            # Create the model with the best state to get its equation
+            env.create_structure_model([eval_s[best_idx]])
             best_equation_so_far = env.get_equation()
             best_equation_epoch = current_epoch
-            print(f"\nNew best equation found at epoch {current_epoch}:")
+            
+            print(f"\nNew best structure found at epoch {current_epoch}:")
             print(f"Reward: {best_reward_so_far:.4f}")
             print(f"Equation:\n{best_equation_so_far}")
             print("-" * 50)
     
-    return avg_mse, top_mse
+    return avg_reward, top_reward
 
 
-def reward(model, train_loader, val_loader, config, device):
+def reward(states):
     """
-    Compute reward for a given model architecture.
+    Compute a toy reward for each state based on function composition.
+    Power functions get highest reward, but other functions also contribute.
     
     Args:
-        model: The trained model
-        train_loader: Training data loader
-        val_loader: Validation data loader
-        config: Training configuration
-        device: Device to use for computation
+        states: List of states, where each state is a list of layers containing function indices
         
     Returns:
-        torch.Tensor: Rewards for the model
+        torch.Tensor: Rewards for each state
     """
-    # Compute reward using the new reward system
-    rewards = compute_reward(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        config=config,
-        device=device,
-        reward_type='nrmse'  # You can change this to 'tss', 'dynamic', or 'struct'
-    )
+    batch_size = len(states)
+    rewards = torch.zeros(batch_size)
+    
+    # Function scores dictionary
+    # Indices based on the function types defined in main():
+    # 0: sin, 1: exp, 2: log, 3: power, 4: identity
+    function_scores = {
+        0: 0.0,  # sin
+        1: 1.5,  # exp
+        2: 1.0,  # log
+        3: 4.0,  # power (highest score)
+        4: 2.0   # identity (lowest score)
+    }
+    
+    for i, state in enumerate(states):
+        total_score = 0.0
+        function_counts = {idx: 0 for idx in function_scores.keys()}
+        
+        # Count occurrences of each function
+        for layer in state:
+            for func_idx in layer:
+                if func_idx in function_scores:
+                    function_counts[func_idx] += 1
+        
+        # Calculate weighted score
+        for func_idx, count in function_counts.items():
+            if count > 0:
+                # Base score for having the function
+                base_score = function_scores[func_idx]
+                # Bonus for multiple instances (diminishing returns)
+                bonus = torch.log1p(torch.tensor(count)).item()
+                total_score += base_score * bonus
+        
+        # Add diversity bonus if using multiple different functions
+        num_different_functions = sum(1 for count in function_counts.values() if count > 0)
+        diversity_bonus = num_different_functions * 0.5
+        
+        # Compute final reward with base score and bonuses
+        rewards[i] = torch.tensor(1.0 + total_score + diversity_bonus)
+        
+        # Print detailed scoring for best rewards (optional)
+        if rewards[i] > 10.0:  # Adjust threshold as needed
+            print(f"\nHigh reward structure found ({rewards[i]:.2f}):")
+            for func_idx, count in function_counts.items():
+                if count > 0:
+                    print(f"Function {func_idx}: {count} instances")
+            print(f"Diversity bonus: {diversity_bonus:.2f}")
+            print("-" * 30)
     
     return rewards
 

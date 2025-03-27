@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn.parameter import Parameter
 from torch.distributions import Categorical
 from log import Log
+from functions import mask_and_normalize as custom_mask_and_normalize
 
 
 class GFlowNet(nn.Module):
@@ -35,24 +36,39 @@ class GFlowNet(nn.Module):
         actions that lead outside the state space).
         
         Args:
-            s: An NxD matrix representing N states
+            s: Batch of neural network states (list of lists representing layers)
             
             probs: An NxA matrix of action probabilities
         """
         # 1e-8 for smoothing and avoiding division by zero
-        mask, done_idx = self.env.mask(s)
+        if hasattr(self.env, 'mask'):
+            # Use the environment's mask if available
+            mask, done_idx = self.env.mask(s)
+        else:
+            # Otherwise use our custom masking function
+            mask, done_idx = custom_mask_and_normalize(
+                s, 
+                self.forward_policy.num_functions, 
+                self.forward_policy.function_categories,
+                self.forward_policy.placeholder_unary,
+                self.forward_policy.placeholder_binary
+            )
+        
+        # Apply mask and normalize probabilities
         probs = mask * (probs + 1e-8)
         probs = probs / probs.sum(1).unsqueeze(1)
+        
         return probs, done_idx
-    
+        
     def forward_probs(self, s):
         """
         Returns a vector of probabilities over actions in a given state.
         
         Args:
-            s: An NxD matrix representing N states
+            s: Batch of neural network states (list of lists representing layers)
         """
-        probs = self.forward_policy(s)
+        # The forward_policy now handles masking internally
+        probs = self.forward_policy(s, apply_mask=False)
         return self.mask_and_normalize(s, probs)
     
     def sample_states(self, s0):
@@ -60,34 +76,22 @@ class GFlowNet(nn.Module):
         Samples and returns a collection of final states from the GFlowNet.
         
         Args:
-            s0: An NxD matrix of initial states
+            s0: Initial states (list of lists representing neural network layers with placeholders)
         """
-        s, n = s0.clone(), len(s0)
-        done = torch.zeros(n, dtype=torch.bool)
-
-        _traj, _fwd_probs = [s0.view(n, 1, -1)], []
-        while not done.all():
-            probs, done = self.forward_probs(s)
-            probs = probs[~done]
-            actions = Categorical(probs).sample()
-            state, update_success = self.env.update(s[~done], actions)
-            all_success = update_success.all()
-
-            fwd_probs = torch.ones(n, 1)
-            if all_success:
-                s[~done] = state
-                fwd_probs[~done] = probs.gather(1, actions.unsqueeze(1))
-            else:
-                s[~done][update_success] = state[update_success]
-                fwd_probs[~done][update_success] = probs.gather(1, actions.unsqueeze(1))[update_success]
-
-            # logging necessary information
-            _traj.append(s.clone().view(n, 1, -1))
-            _fwd_probs.append(fwd_probs)
-
-        _rewards = self.env.reward(s)
-        log = Log(_traj, _fwd_probs, _rewards, self.total_flow)
-        return s, log
+        # Use the forward policy's sample_states method which already implements the full sampling logic
+        states, log_probs, action_sequences = self.forward_policy.sample_states(
+            s0, 
+            max_steps=100, 
+            apply_mask=False
+        )
+        
+        # Calculate rewards for sampled states
+        #rewards = self.env.reward(states)
+        
+        # Create a log object to track information about the sampling process
+        #log = Log(states, log_probs, rewards, self.total_flow)
+        
+        return states, log_probs, action_sequences, self.total_flow #log
     
     def evaluate_trajectories(self, traj, actions):
         """
@@ -101,25 +105,31 @@ class GFlowNet(nn.Module):
             
             actions: The actions that produced the trajectories in traj
         """
-        num_samples = len(traj)
-        traj = traj.reshape(-1, traj.shape[-1])
-        actions = actions.flatten()
-        finals = traj[actions == self.env.num_actions - 1]
-        zero_to_n = torch.arange(len(actions))
-        
-        fwd_probs = self.forward_probs(traj)
-        fwd_probs = torch.where(actions == -1, 1, fwd_probs[zero_to_n, actions])
-        fwd_probs = fwd_probs.reshape(num_samples, -1)
-        
-        actions = actions.reshape(num_samples, -1)[:, :-1].flatten()
-        
-        back_probs = self.backward_policy(traj)
-        back_probs = back_probs.reshape(num_samples, -1, back_probs.shape[1])
-        back_probs = back_probs[:, 1:, :].reshape(-1, back_probs.shape[2])
-        back_probs = torch.where((actions == -1) | (actions == 2), 1,
-                                 back_probs[zero_to_n[:-num_samples], actions])
-        back_probs = back_probs.reshape(num_samples, -1)
-        
-        rewards = self.env.reward(finals)
-        
-        return fwd_probs, back_probs, rewards
+        # This method would need to be reimplemented for neural networks
+        # but it doesn't appear to be used in the current training workflow
+        raise NotImplementedError("evaluate_trajectories is not yet implemented for neural networks")
+
+
+def trajectory_balance_loss(total_flow, rewards, fwd_probs):
+    """
+    Compute the trajectory balance loss as described in Bengio et al. (2022).
+    The loss is computed as log squared difference between the left-hand side
+    (total_flow * prod(fwd_probs)) and the rewards.
+    
+    Args:
+        total_flow: The total flow for each trajectory
+        rewards: The rewards associated with the final state of each trajectory
+        fwd_probs: The forward probabilities associated with each node in the trajectory
+                  (shape: [batch_size, num_nodes])
+    """
+    # Calculate left-hand side of the trajectory balance equation
+    # Sum log probabilities across nodes and take exp to get product
+    lhs = total_flow * torch.exp(torch.sum(fwd_probs, dim=1))
+    
+    # Calculate the loss as log squared difference
+    loss = torch.log(lhs / rewards)**2
+    
+    # Check for numerical issues
+    assert torch.isfinite(loss).all(), total_flow
+    
+    return loss.mean()

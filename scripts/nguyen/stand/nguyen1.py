@@ -59,7 +59,7 @@ def main():
     # Training configuration
     config = {
         'training': {
-            'num_epochs': 1500,
+            'num_epochs': 150,
             'learning_rate': 0.01,
             'reg_strength': 1,
             'decimal_penalty': 0.01,
@@ -68,7 +68,8 @@ def main():
             'use_connectivity_training': False,  # Set to False for classical training
             'max_architectures': 10,
             'max_patterns_per_layer': 5,
-            'num_parallel_trials': 1
+            'num_parallel_trials': 1,
+            'print_training_stats': True
         }
     }
 

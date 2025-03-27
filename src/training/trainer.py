@@ -119,14 +119,14 @@ class Trainer:
         reg_strength = self.config['training']['reg_strength']
         decimal_penalty = self.config['training'].get('decimal_penalty', 0.01)*0
         
-        print("Starting training with regularization")
+        #print("Starting training with regularization")
         for epoch in range(num_epochs):
             train_loss = self.train_epoch(epoch, reg_strength, decimal_penalty)
             
-            if self.val_loader is not None:
+            if self.val_loader is not None and self.config['training']['print_training_stats'] is True:
                 val_loss = self.validate(epoch)
                 print(f"Epoch {epoch + 1}/{num_epochs} - Train Loss: {train_loss:.6f} - Val Loss: {val_loss:.6f}")
-            else:
+            elif self.config['training']['print_training_stats'] is True:
                 print(f"Epoch {epoch + 1}/{num_epochs} - Train Loss: {train_loss:.6f}")
                 
             #self.scheduler.step()

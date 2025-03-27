@@ -219,7 +219,8 @@ class SRNetwork(nn.Module):
 
         if self.exp_n is None:
             # We are in the GFN searching process
-            self.structure = self.initialize_funtions_structure()
+            self.num_actions = len(function_set)
+            #self.structure = self.initialize_funtions_structure()
         
         else:                    
             # When not using GFN, we need to specify the experiment number
@@ -228,26 +229,37 @@ class SRNetwork(nn.Module):
             self.layers = self._build_layers(input_size, output_size)
 
 
-    def initialize_funtions_structure(self):
-        """Initialize the functions structure for the GFN searching process.
+
+
+
+    def initialize_functions_structure(self, batch_size):
+        """Initialize the functions structure for the GFN searching process for each batch.
         
         The nonlinear_info format is a list of tuples [(u1, b1), (u2, b2), ...] where:
         - u1, u2 are the number of unary functions for each node
         - b1, b2 are the number of binary functions for each node
         
         For example, if nonlinear_info = [(3, 1), (1, 2)]:
-        Returns: [[-1, -1, -1, -2], [-1, -2, -2]] where:
+        Returns: a tensor of shape (batch_size, num_nodes, num_functions) where:
         - -1 represents placeholder for unary functions
         - -2 represents placeholder for binary functions
         """
-        structure = []
-        
-        for unary_count, binary_count in self.nonlinear_info:
-            # Create node functions: unary functions (-1) followed by binary functions (-2)
-            node_functions = ([-1] * unary_count) + ([-2] * binary_count)
-            structure.append(node_functions)
-        
-        return structure
+        all_structures = []  # List to hold structures for each batch
+
+        for _ in range(batch_size):  # Repeat for each batch
+            structure = []
+            
+            for unary_count, binary_count in self.nonlinear_info:
+                # Create node functions: unary functions (-1) followed by binary functions (-2)
+                node_functions = ([-1] * unary_count) + ([-2] * binary_count)
+                structure.append(node_functions)
+            
+            all_structures.append(structure)  # Append the structure for this batch
+
+        # Convert the list of structures to a tensor
+        tensor_structure = torch.tensor(all_structures, dtype=torch.long)
+
+        return tensor_structure 
 
 
     
@@ -300,6 +312,86 @@ class SRNetwork(nn.Module):
             return [[j % len(self.torch_funcs) for j in range(self.nonlinear_info[i][0])]
                     for i in range(num_layers)]
 
+    def create_structure_model(self, states):
+        """
+        Calculate rewards for the sampled neural network architectures.
+        The reward is the negative MSE, so higher values indicate better performance.
+        
+        Args:
+            states: Batch of neural network states (list of lists representing layers with function assignments)
+            
+        Returns:
+            torch.Tensor: Rewards for each state
+        """
+        # Initialize rewards
+        batch_size = len(states)
+        rewards = torch.zeros(batch_size)
+        
+        # Build network for each state and evaluate
+        for i, state in enumerate(states):
+            # Convert function indices to function names
+            function_structure = []
+            for layer in state:
+                layer_functions = []
+                for func_idx in layer:
+                    if func_idx >= 0 and func_idx < len(self.torch_funcs):
+                        # Get function name at the specified index
+                        function_name = list(self.torch_funcs.keys())[func_idx]
+                        layer_functions.append(function_name)
+                function_structure.append(layer_functions)
+            
+            # Temporarily set the structure for this network
+            self.structure = function_structure
+            #self.structure = [['power', 'power', 'power']]
+            
+            # Build the network layers
+            self.layers = self._build_layers(self.input_size, self.output_size)
+                
+                
+                
+                
+                
+                
+                
+                
+                # Get train data for evaluation
+                # You'll need to adapt this part based on how you handle datasets
+                #x_train, y_train = self._get_training_data()
+                
+                # Forward pass to calculate MSE
+                #y_pred = self(x_train)
+                #mse = F.mse_loss(y_pred, y_train)
+                
+                # Negative MSE as reward (higher reward = better performance)
+                #rewards[i] = -mse.item()
+            #except Exception as e:
+                #print(e)
+                # If something goes wrong, give a very low reward
+                #rewards[i] = -float('inf')
+        
+        #return rewards
+    
+    def _get_training_data(self):
+        """
+        Get a small batch of training data for reward calculation.
+        
+        Returns:
+            tuple: (x_train, y_train) tensors
+        """
+        # Here you should return some training data
+        # This is just a placeholder implementation
+        # You should adapt this to your specific dataset handling
+        
+        # Example implementation assuming you have train loaders available:
+        try:
+            from src.utils.data_utils import generate_nguyen_data
+            X, y = generate_nguyen_data('Nguyen-1', num_samples=100)
+            return torch.tensor(X, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+        except:
+            # Fallback to random data if dataset not available
+            x_dummy = torch.randn(100, self.input_size)
+            y_dummy = torch.randn(100, self.output_size)
+            return x_dummy, y_dummy
 
     def _build_layers(self, input_size, output_size):
         """Build the layers of the model."""
@@ -395,11 +487,11 @@ class SRNetwork(nn.Module):
             
             # Map the function name to the corresponding sympy function
             if func_name == 'exp':
-                return self.sympy_funcs[1](x_term)  # exp
+                return self.sympy_funcs[0](x_term)  # exp
             elif func_name == 'log':
-                return self.sympy_funcs[2](x_term)  # log
+                return self.sympy_funcs[1](x_term)  # log
             elif func_name == 'sin':
-                return self.sympy_funcs[3](x_term)  # sin
+                return self.sympy_funcs[2](x_term)  # sin
             else:
                 raise ValueError(f"Unknown function type: {func_name}")
 

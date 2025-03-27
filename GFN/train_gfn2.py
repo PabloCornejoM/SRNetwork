@@ -74,10 +74,10 @@ def main():
     function_categories = get_function_categories_from_names(function_names, function_types)
     
     # Generate data from experiment
-    train_loader, val_loader = get_nguyen_data_loaders('Nguyen-1', batch_size=64)
+    train_loader, val_loader = get_nguyen_data_loaders('Nguyen-2', batch_size=64)
     
     # Get the full dataset for plotting
-    X, y = generate_nguyen_data('Nguyen-1')
+    X, y = generate_nguyen_data('Nguyen-2')
 
     # Initialize the environment
     input_size = X.shape[1]
@@ -91,7 +91,7 @@ def main():
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    batch_size = 10  # Increased batch size for better statistics
+    batch_size = 1  # Increased batch size for better statistics
 
     # Initialize policies
     forward_policy = RNNForwardPolicy(
