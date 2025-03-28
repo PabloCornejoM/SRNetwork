@@ -4,8 +4,8 @@ from torch.utils.data import DataLoader
 from typing import Dict, Any, Optional, List, Tuple
 import torch.nn.functional as F
 
-class BaseEQLModule(pl.LightningModule):
-    """Base Lightning Module for EQL training."""
+class BaseSRNetModule(pl.LightningModule):
+    """Base Lightning Module for SRNet training."""
     
     def __init__(
         self,
@@ -116,8 +116,8 @@ class BaseEQLModule(pl.LightningModule):
             print()
 
 
-class ConnectivityEQLModule(BaseEQLModule):
-    """Lightning Module for Connectivity-based EQL training."""
+class ConnectivitySRNetModule(BaseSRNetModule):
+    """Lightning Module for Connectivity-based SRNet training."""
     
     def __init__(
         self,

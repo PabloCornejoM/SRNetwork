@@ -1,6 +1,11 @@
-# EQL PyTorch Implementation
+# SRNetwork in PyTorch Implementation
 
-This repository contains a PyTorch implementation of Equation Learning (EQL) for symbolic regression tasks.
+This repository contains a PyTorch implementation of a Symbolic Regression network, a neural network design for symbolic regression tasks.
+
+This network is able to learn the parameters of the a determined structure. It is possible to predefine the desired fucntions to be used to fit any equation. If desired it can do the same job of the Equation Learner (EQL) where for N desired functions or networks aims to train the model to set parameters to 0. 
+
+
+How to use it: ...
 
 ## Project Structure
 
@@ -56,8 +61,8 @@ python scripts/experiments/nguyen1.py
 ## Models
 
 The project includes implementations of:
-- EQL Model
-- Connectivity EQL Model
+- SRNetwork
+- Connectivity SRNet Model
 - Custom activation functions for symbolic regression
 
 ## Contributing

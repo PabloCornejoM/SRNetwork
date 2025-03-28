@@ -40,7 +40,7 @@ def plot_results(x_values, y_values, predictions):
         ax2.set_xlabel('x1')
         ax2.set_ylabel('x2')
         ax2.set_zlabel('y')
-        ax2.set_title('EQL Prediction (3D)')
+        ax2.set_title('SRNet Prediction (3D)')
         
         # 3. Error plot (2D)
         ax3 = fig.add_subplot(223)
@@ -96,9 +96,9 @@ def plot_results(x_values, y_values, predictions):
         
         # Function plot
         ax1.plot(x_np, y_np, label='True Function')
-        ax1.plot(x_np, pred_np, '--', label='EQL Prediction')
+        ax1.plot(x_np, pred_np, '--', label='SRNet Prediction')
         ax1.legend()
-        ax1.set_title('EQL Function Learning Results')
+        ax1.set_title('SRNet Function Learning Results')
         ax1.set_xlabel('x')
         ax1.set_ylabel('y')
         ax1.grid(True)

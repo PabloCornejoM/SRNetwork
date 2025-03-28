@@ -1,7 +1,7 @@
-from src.models.eql_model import ConnectivitySRNetwork
+from src.models.srnet_model import ConnectivitySRNetwork
 
 def initialize_model(input_size, output_size, num_layers, function_set, nonlinear_info, min_connections_per_neuron=1, exp_n=None):
-    """Initialize the ConnectivityEQLModel."""
+    """Initialize the ConnectivitySRNetModel."""
     return ConnectivitySRNetwork(
         input_size=input_size,
         output_size=output_size,

@@ -124,7 +124,7 @@ class SafePower(BaseSafeFunction):
         self.count = -3
 
     def init_parameters(self, input_size, output_size):
-        """Initialize parameters for EQL layer integration"""
+        """Initialize parameters for SRNet layer integration"""
         self.weight = nn.Parameter(torch.empty(output_size, input_size))
         self.bias = nn.Parameter(torch.zeros(output_size))
         self.sign_params = nn.Parameter(torch.zeros(output_size))
@@ -229,7 +229,7 @@ class SafePower2(BaseSafeFunction):
         self.count = -3
 
     def init_parameters(self, input_size, output_size):
-        """Initialize parameters for EQL layer integration"""
+        """Initialize parameters for SRNet layer integration"""
         self.weight = nn.Parameter(torch.empty(output_size, input_size))
         self.bias = nn.Parameter(torch.zeros(output_size))
         self.sign_params = nn.Parameter(torch.zeros(output_size))

@@ -98,9 +98,9 @@ class Connected(nn.Module):
             #self.b_mask.copy_((torch.abs(self.b) >= threshold).float())
 
 
-class EqlLayer(Connected):
+class SRNetLayer(Connected):
     """
-    EQL linear-nonlinear layer with unary and binary nonlinearities.
+    SRNet linear-nonlinear layer with unary and binary nonlinearities.
 
     Arguments:
         input_size: int, number of input features
@@ -126,7 +126,7 @@ class EqlLayer(Connected):
             #else:
                 #function_classes.append(None)
         
-        super(EqlLayer, self).__init__(
+        super(SRNetLayer, self).__init__(
             input_size, output_size,
             init_stddev=init_stddev,
             regularization=regularization,
@@ -140,7 +140,7 @@ class EqlLayer(Connected):
 
     def forward(self, x):
         # Linear transformation for non-power functions
-        lin_output = super(EqlLayer, self).forward(x)
+        lin_output = super(SRNetLayer, self).forward(x)
         
         u, v = self.node_info
         outputs = []
@@ -208,7 +208,7 @@ class EqlLayer(Connected):
 
 class DivLayer(Connected):
     """
-    EQL division layer for EQL-div models.
+    SRNet division layer for SRNet-div models.
 
     Arguments:
         input_size: int, number of input features
@@ -302,9 +302,9 @@ class MaskedConnected(Connected):
             self.W_mask.copy_(weight_mask)
             self.b_mask.copy_((torch.abs(self.b) >= threshold).float())
 
-class MaskedEqlLayer(EqlLayer):
+class MaskedSRNetLayer(SRNetLayer):
     """
-    A variant of EqlLayer that supports custom connectivity patterns through masks.
+    A variant of SRNetLayer that supports custom connectivity patterns through masks.
     
     Arguments:
         input_size: int, number of input features
@@ -320,7 +320,7 @@ class MaskedEqlLayer(EqlLayer):
     """
     def __init__(self, input_size, node_info, function_set, unary_funcs,
                  connectivity_mask=None, init_stddev=None, regularization=0.0):
-        super(MaskedEqlLayer, self).__init__(
+        super(MaskedSRNetLayer, self).__init__(
             input_size=input_size,
             node_info=node_info,
             function_set=function_set,
@@ -346,7 +346,7 @@ class MaskedEqlLayer(EqlLayer):
     def forward(self, x):
         # Apply connectivity mask to weights before standard forward pass
         self.W_mask.mul_(self.connectivity_mask)
-        return super(MaskedEqlLayer, self).forward(x)
+        return super(MaskedSRNetLayer, self).forward(x)
 
     def l1_regularization(self):
         # Include connectivity mask in regularization

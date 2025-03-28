@@ -1,18 +1,18 @@
 import pytorch_lightning as pl
 from typing import Dict, Any
-from src.training.lightning_modules import BaseEQLModule, ConnectivityEQLModule
+from src.training.lightning_modules import BaseSRNetModule, ConnectivitySRNetModule
 from src.training.callbacks import SimpleProgressCallback
 
-# This is the main training script for the EQL model when using Lightning
+# This is the main training script for the SRNet model when using Lightning
 # It is used to train the model using the Lightning framework, if not it will use the original trainer
 
 
 def train_model(model, train_loader, val_loader, config, device):
     """
-    Train an EQL model using PyTorch Lightning.
+    Train an SRNet model using PyTorch Lightning.
     
     Args:
-        model: The EQL model to train
+        model: The SRNet model to train
         train_loader: PyTorch DataLoader for training data
         val_loader: PyTorch DataLoader for validation data
         config: Dictionary containing training configuration
@@ -60,7 +60,7 @@ def train_model(model, train_loader, val_loader, config, device):
     
     # Create appropriate Lightning module based on training type
     if config['training'].get('use_connectivity_training', False):
-        lightning_module = ConnectivityEQLModule(
+        lightning_module = ConnectivitySRNetModule(
             model=model,
             config=config,
             max_architectures=config['training'].get('max_architectures'),
@@ -68,7 +68,7 @@ def train_model(model, train_loader, val_loader, config, device):
             num_parallel_trials=config['training'].get('num_parallel_trials', 3)
         )
     else:
-        lightning_module = BaseEQLModule(
+        lightning_module = BaseSRNetModule(
             model=model,
             config=config
         )

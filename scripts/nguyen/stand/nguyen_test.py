@@ -39,7 +39,7 @@ def main():
     input_size = 2
     output_size = 1
     num_layers = 2
-    nonlinear_info = [(1, 0), (0, 0), (0, 0)]
+    nonlinear_info = [(3, 0), (0, 0), (0, 0)]
 
     # Get data loaders using the new utility function
     train_loader, val_loader = get_nguyen_data_loaders('Nguyen-test', batch_size=64)
@@ -55,7 +55,7 @@ def main():
         function_set, 
         nonlinear_info, 
         min_connections_per_neuron=1, 
-        exp_n=99
+        exp_n=None
     )
 
     # Training configuration

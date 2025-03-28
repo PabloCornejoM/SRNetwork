@@ -8,7 +8,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 
-from models import EQLModel, ConnectivityEQLModel
+from models import SRNetModel, ConnectivitySRNetModel
 from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
 import matplotlib.pyplot as plt
@@ -158,7 +158,7 @@ def setup_default_model():
         (0, 0)   # Layer 3
     ]
     
-    return ConnectivityEQLModel(
+    return ConnectivitySRNetModel(
         input_size=1,
         output_size=1,
         num_layers=2,

@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from models import EQLModel, ConnectivityEQLModel
+from models import SRNetModel, ConnectivitySRNetModel
 from custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
 from torch.utils.data import TensorDataset, DataLoader
 

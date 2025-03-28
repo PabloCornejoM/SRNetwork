@@ -4,7 +4,7 @@ import numpy as np
 from typing import Optional, Dict, Any
 
 class WandBLogger:
-    """Logger class for Weights & Biases integration with EQL models."""
+    """Logger class for Weights & Biases integration with SRNet models."""
     
     def __init__(self, 
                  project_name: str,

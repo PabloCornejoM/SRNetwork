@@ -9,7 +9,7 @@ import copy
 class ConnectivityTrainer:
     def __init__(
         self,
-        model: 'ConnectivityEQLModel',
+        model: 'ConnectivitySRNetModel',
         train_loader: torch.utils.data.DataLoader,
         val_loader: torch.utils.data.DataLoader,
         config: Dict[str, Any],
@@ -67,7 +67,7 @@ class ConnectivityTrainer:
         max_architectures: Optional[int] = None,
         max_patterns_per_layer: Optional[int] = None,
         num_parallel_trials: int = 3
-    ) -> Tuple['ConnectivityEQLModel', float, List[torch.Tensor]]:
+    ) -> Tuple['ConnectivitySRNetModel', float, List[torch.Tensor]]:
         """Train multiple architectures and return the best one."""
         architectures = self.model.get_all_valid_architectures(max_patterns_per_layer)
         

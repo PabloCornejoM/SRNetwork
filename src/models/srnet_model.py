@@ -12,17 +12,17 @@ import numpy as np
 import sympy
 import sympy as sp
 import itertools
-from src.models.classes import EqlLayer, Connected, MaskedEqlLayer, MaskedConnected
+from src.models.classes import SRNetLayer, Connected, MaskedSRNetLayer, MaskedConnected
 from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SYMPY_MAPPING, SafeSin, SafePower
 
-def train_eql_model(model, train_loader, val_loader, num_epochs, learning_rate=0.001,
+def train_SRNet_model(model, train_loader, val_loader, num_epochs, learning_rate=0.001,
                     reg_strength=1e-3, threshold=0.1, logger=None, decimal_penalty=0.01):
     """
-    Train EQL model using the three-phase schedule from the paper.
+    Train SRNet model using the three-phase schedule from the paper.
     Added decimal complexity penalty parameter.
     
     Arguments:
-        model: EQLModel instance
+        model: SRNetModel instance
         train_loader: PyTorch DataLoader containing training data
         num_epochs: total number of epochs to train
         learning_rate: learning rate for optimizer
@@ -218,9 +218,9 @@ class SRNetwork(nn.Module):
 
 
         if self.exp_n is None:
-            # We are in the GFN searching process
+            # We use the EQL idea to initialize the functions structure
             self.num_actions = len(function_set)
-            #self.structure = self.initialize_funtions_structure()
+            self.structure = self.initialize_funtions_as_eql()
         
         else:                    
             # When not using GFN, we need to specify the experiment number
@@ -261,7 +261,32 @@ class SRNetwork(nn.Module):
 
         return tensor_structure 
 
-
+    def initialize_funtions_as_eql(self):
+        """Initialize the functions structure following EQL approach.
+        
+        This method creates a structure where each layer's functions are sampled
+        from torch_funcs in order, repeating when needed to match the nonlinear_info
+        requirements.
+        
+        Returns:
+            list: A list of lists containing function names for each layer
+        """
+        structure = []
+        # Get list of function names from the dictionary keys
+        func_names = list(self.torch_funcs.keys())
+        
+        for unary_count, _ in self.nonlinear_info:
+            layer_functions = []
+            # For each layer, sample functions in order from torch_funcs
+            for i in range(unary_count):
+                # Use modulo to wrap around to the beginning of torch_funcs
+                func_idx = i % len(func_names)
+                # Get the function name directly from the dictionary keys
+                func_name = func_names[func_idx]
+                layer_functions.append(func_name)
+            structure.append(layer_functions)
+            
+        return structure
     
     def _create_sympy_functions(self, function_set):
         """Create corresponding sympy functions from the provided PyTorch functions."""
@@ -402,7 +427,7 @@ class SRNetwork(nn.Module):
             u, v = self.nonlinear_info[i]
             out_size = u + 2 * v
             stddev = np.sqrt(1.0 / (inp_size * out_size))
-            layer = EqlLayer(
+            layer = SRNetLayer(
                 input_size=inp_size,
                 node_info=(u, v),
                 function_set=self.torch_funcs,
@@ -517,12 +542,12 @@ class SRNetwork(nn.Module):
 
     def __str__(self):
         """Print a structured representation of the model."""
-        model_str = f"\nEQL Model: {self.name}\n" + "=" * 50 + "\n"
+        model_str = f"\nSRNet Model: {self.name}\n" + "=" * 50 + "\n"
         model_str += f"Input size: {self.input_size}\nOutput size: {self.output_size}\nNumber of layers: {self.num_layers}\n\n"
         model_str += "Activation Functions:\n" + "\n".join(f"  [{i}] {func.__class__.__name__ if isinstance(func, torch.nn.Module) else func.__name__}" for i, func in enumerate(self.torch_funcs)) + "\n\n"
         
         for i, layer in enumerate(self.layers):
-            model_str += f"Layer {i+1} (EqlLayer):\n  Unary nodes: {layer.node_info[0]}\n  Binary nodes: {layer.node_info[1]}\n  Unary functions used:\n"
+            model_str += f"Layer {i+1} (SRNetLayer):\n  Unary nodes: {layer.node_info[0]}\n  Binary nodes: {layer.node_info[1]}\n  Unary functions used:\n"
             model_str += "\n".join(f"    Node {j+1}: {self.torch_funcs[func_idx].__class__.__name__ if isinstance(self.torch_funcs[func_idx], torch.nn.Module) else self.torch_funcs[func_idx].__name__}" for j, func_idx in enumerate(self.structure[i])) + "\n\n"
         
         model_str += f"Output Layer:\n  Linear transformation: {self.output_layer.input_size} -> {self.output_layer.output_size}\n"
@@ -663,7 +688,7 @@ class ConnectivitySRNetwork(SRNetwork):
             u, v = self.nonlinear_info[i]
             out_size = u + 2 * v
             stddev = np.sqrt(1.0 / (inp_size * out_size))
-            layer = MaskedEqlLayer(input_size=inp_size, node_info=(u, v),
+            layer = MaskedSRNetLayer(input_size=inp_size, node_info=(u, v),
                                     function_set=self.torch_funcs, 
                                     unary_funcs=self.structure[i],
                                     init_stddev=stddev, 
@@ -819,7 +844,7 @@ class ConnectivitySRNetwork(SRNetwork):
     def _train_model(self, train_loader, val_loader, num_epochs, learning_rate, reg_strength, 
                      threshold, optimize_final, optimization_options, trial_results, trial, logger):
         train_strategy = self._select_learning_rate_strategy(trial)
-        train_eql_model(self, train_loader, val_loader, num_epochs, learning_rate, reg_strength, 
+        train_SRNet_model(self, train_loader, val_loader, num_epochs, learning_rate, reg_strength, 
                         threshold, logger)
         self.eval()
         current_loss = self.evaluate_model(val_loader)
@@ -879,7 +904,7 @@ class ConnectivitySRNetwork(SRNetwork):
         lr_config, beta_config = self._get_learning_configs()
 
         for layer in self.layers:
-            if isinstance(layer, (EqlLayer, MaskedEqlLayer)):
+            if isinstance(layer, (SRNetLayer, MaskedSRNetLayer)):
                 self._add_layer_params_to_groups(layer, param_groups, lr_config, beta_config)
 
         if isinstance(self.output_layer, (Connected, MaskedConnected)):
