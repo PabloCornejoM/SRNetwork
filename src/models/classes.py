@@ -26,14 +26,14 @@ class Connected(nn.Module):
 
         # Weight and bias parameters
         self.W = nn.Parameter(torch.Tensor(output_size, input_size))
-        #self.b = nn.Parameter(torch.Tensor(output_size))
+        self.b = nn.Parameter(torch.Tensor(output_size))
         self.sign_params = nn.Parameter(torch.Tensor(output_size))
         # Initialize weights and biases
         self.reset_parameters()
 
         # Masks for weight trimming (non-trainable)
         self.register_buffer('W_mask', torch.ones_like(self.W))
-        #self.register_buffer('b_mask', torch.ones_like(self.b))
+        self.register_buffer('b_mask', torch.ones_like(self.b))
 
     def reset_parameters(self):
         """
@@ -60,7 +60,7 @@ class Connected(nn.Module):
                 func_instance.init_parameters(self.input_size, 1)
                     # Copy the initialized parameters to the corresponding segment
                 self.W.data[current_index:current_index + 1] = func_instance.weight.data
-                #self.b.data[current_index:current_index + 1] = func_instance.bias.data
+                self.b.data[current_index:current_index + 1] = func_instance.bias.data
                 try:
                     self.sign_params.data[current_index:current_index + 1] = func_instance.sign_params.data
                 except:
@@ -68,8 +68,9 @@ class Connected(nn.Module):
                 current_index += 1
         elif self.init_stddev is not None:
             nn.init.normal_(self.W, std=self.init_stddev)
+            #print("tootestanddelete")
             #self.W.data.fill_(1)
-            #nn.init.uniform_(self.W, a=0.0, b=1.0)  # Initialize W between 0 and 1
+            nn.init.uniform_(self.W, a=0.0, b=1.0)  # Initialize W between 0 and 1
             #nn.init.zeros_(self.b)
         else:
             nn.init.kaiming_normal_(self.W, nonlinearity='linear')
@@ -78,7 +79,7 @@ class Connected(nn.Module):
     def forward(self, x):
         # Apply weight masks for trimming
         W_trimmed = self.W * self.W_mask
-        #b_trimmed = self.b * self.b_mask
+        b_trimmed = self.b #* self.b_mask
         #output = torch.matmul(W_trimmed, x.t()) + b_trimmed
         output = torch.matmul(x, W_trimmed.t()) #+ b_trimmed  # Transpose W_trimmed
         return output
@@ -95,7 +96,7 @@ class Connected(nn.Module):
         # Zero out weights and biases below the threshold
         with torch.no_grad():
             self.W_mask.copy_((torch.abs(self.W) >= threshold).float())
-            #self.b_mask.copy_((torch.abs(self.b) >= threshold).float())
+            self.b_mask.copy_((torch.abs(self.b) >= threshold).float())
 
 
 class SRNetLayer(Connected):

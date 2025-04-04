@@ -27,7 +27,8 @@ class BaseSafeFunction(nn.Module):
     
     def _init_bias_values(self):
         """Default bias initialization."""
-        nn.init.zeros_(self.bias)
+        #nn.init.zeros_(self.bias)
+        self.bias.data.fill_(-1)
 
 class SafeExp(BaseSafeFunction):
     """Safe exponential implementation with controlled scaling."""
@@ -44,11 +45,12 @@ class SafeExp(BaseSafeFunction):
     
     def _init_weight_values(self):
         # Initialize with negative identity matrices as in your implementation
-        times = int(self.weight.shape[1] // self.weight.shape[0]) + 1
+        '''times = int(self.weight.shape[1] // self.weight.shape[0]) + 1
         output_matrix = [-1 * (i+1) * np.eye(self.weight.shape[0]) for i in range(times)]
         output_matrix = np.concatenate(output_matrix, axis=-1)
         output_matrix = torch.Tensor(output_matrix[:, :self.weight.shape[1]])
-        self.weight.data.copy_(output_matrix)
+        self.weight.data.copy_(output_matrix)'''
+        self.weight.data.fill_(0)
 
 class SafeLog(BaseSafeFunction):
     """Safe logarithm implementation with proper handling of small/negative values."""
@@ -353,3 +355,31 @@ SYMPY_MAPPING = {
     SafeIdentityFunction: sympy.Id  # Add BaseIdentityFunction to the mapping
 } 
 
+class SafeCos(BaseSafeFunction):
+    """Safe cosine implementation with controlled scaling."""
+    
+    def __init__(self):
+        super().__init__("cos", "cos")
+        self.trap = 0
+
+    def forward(self, x):
+        return torch.cos(x)
+    
+    
+    def _init_weight_values(self):
+        signs = torch.where(
+            torch.rand_like(self.weight) > 0,
+            torch.ones_like(self.weight),
+            -torch.ones_like(self.weight)
+        )
+        self.weight.data.copy_(signs)
+        self.weight.data.uniform_(6, 7.0)
+    
+    def _init_bias_values(self):
+        """Initialize bias values."""
+        nn.init.zeros_(self.bias)
+    
+    def clip(self):
+        """Clip weights and biases to controlled range."""
+        torch.clip_(self.weight, -1, 1)
+        torch.clip_(self.bias, -1, 1)

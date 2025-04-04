@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-def plot_results(x_values, y_values, predictions):
+def plot_results(x_values, y_values, predictions, original_eq=None, predicted_eq=None, name=None):
     """
     Plot the true function and model predictions.
     
@@ -95,9 +95,12 @@ def plot_results(x_values, y_values, predictions):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
         
         # Function plot
-        ax1.plot(x_np, y_np, label='True Function')
+        ax1.plot(x_np, y_np, 'o', label='True Function')
         ax1.plot(x_np, pred_np, '--', label='SRNet Prediction')
-        ax1.legend()
+        if original_eq:
+            print(original_eq, predicted_eq)
+            ax1.legend(["True: " + original_eq, "SRNet: " + predicted_eq])
+        #ax1.legend()
         ax1.set_title('SRNet Function Learning Results')
         ax1.set_xlabel('x')
         ax1.set_ylabel('y')
@@ -113,4 +116,4 @@ def plot_results(x_values, y_values, predictions):
         ax2.legend()
     
     plt.tight_layout()
-    plt.show() 
+    plt.show()

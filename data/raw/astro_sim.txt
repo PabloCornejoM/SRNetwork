@@ -1,4 +1,10 @@
 Equation_name	in_f	Equation	min_range	max_range	n_points	sampling
-toy-1	1	1*np.sin(7*x[:, 0])	0	1	1500	Uniform
+toy-1	1	1*np.cos(7*x[:, 0])	0	1	1500	Uniform
 toy-2	1	0.5*np.cos(7*x[:, 0])	0	1	1500	Uniform
 toy-3	1	1*np.cos(5*x[:, 0])	0	1	1500	Uniform
+
+toy-4	1	np.exp(-3*(x[:, 0] - 0.5))	0.5	1	1500	Uniform
+toy-5	1	np.exp(-7*(x[:, 0] - 0.5))	0.5	1	1500	Uniform
+toy-6	1	np.exp(-15*(x[:, 0] - 0.5))	0.5	1	1500	Uniform
+
+toy-test	1	np.exp(0.3*(x[:, 0] - 30))	0	30	1500	Uniform

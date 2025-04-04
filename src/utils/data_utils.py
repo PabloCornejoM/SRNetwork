@@ -3,10 +3,10 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 import pandas as pd
 
-def load_equation_info(equation_name):
+def load_equation_info(equation_name, path_to_data):
     """Load equation information from nguyen.txt file."""
     # Read the tab-separated file
-    df = pd.read_csv('data/raw/nguyen.txt', sep='\t')
+    df = pd.read_csv(path_to_data, sep='\t')
     
     # Get equation info for the specified name
     equation_info = df[df['Equation_name'] == equation_name].iloc[0]
@@ -20,10 +20,41 @@ def generate_input_data(n_points, min_range, max_range, n_inputs, sampling='Unif
         raise ValueError(f"Sampling method {sampling} not implemented")
     return x
 
-def generate_nguyen_data(equation_name):
+def generate_nguyen_data(equation_name, path_to_data=None):
     """Generate synthetic data for any Nguyen equation."""
+    if path_to_data is None:
+        path_to_data = '/Users/pablocornejo/Documents/Tesis/SRNetwork/data/raw/nguyen.txt'
     # Load equation information
-    eq_info = load_equation_info(equation_name)
+    eq_info = load_equation_info(equation_name, path_to_data)
+
+    # Generate input data
+    x = generate_input_data(
+        n_points=eq_info['n_points'],
+        min_range=eq_info['min_range'],
+        max_range=eq_info['max_range'],
+        n_inputs=eq_info['in_f'],
+        sampling=eq_info['sampling']
+    )
+    
+    # Convert to tensor for computation
+    x_tensor = torch.from_numpy(x).float()
+    
+    # Evaluate the equation using numpy (safer than eval)
+    y = eval(eq_info['Equation'])
+    
+    # Convert to tensors and ensure correct dimensions
+    x_tensor = torch.from_numpy(x).float().view(-1, eq_info['in_f'])
+    y_tensor = torch.from_numpy(y).float().view(-1, 1)
+    
+    return x_tensor, y_tensor
+    
+
+def generate_astro_data(equation_name, path_to_data=None):
+    """Generate synthetic data for any Astro equation."""
+    if path_to_data is None:
+        path_to_data = '/Users/pablocornejo/Documents/Tesis/SRNetwork/data/raw/astro_sim.txt'
+    # Load equation information
+    eq_info = load_equation_info(equation_name, path_to_data)
     
     # Generate input data
     x = generate_input_data(
@@ -65,8 +96,9 @@ def create_data_loaders(train_dataset, val_dataset, batch_size=64):
     return train_loader, val_loader
 
 # Example usage function
-def get_nguyen_data_loaders(equation_name, batch_size=64, train_ratio=0.66666):
-    """Convenience function to get data loaders for a specific Nguyen equation."""
-    x_values, y_values = generate_nguyen_data(equation_name)
+def get_data_loaders(X, y, batch_size=64, train_ratio=0.66666):
+    """Convenience function to get data loaders for a specific equation."""
+    x_values, y_values = X, y
     train_dataset, val_dataset = create_datasets(x_values, y_values, train_ratio)
     return create_data_loaders(train_dataset, val_dataset, batch_size) 
+

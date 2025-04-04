@@ -331,10 +331,15 @@ class SRNetwork(nn.Module):
             return [["sin", "sin"]]
         elif self.exp_n == 71:
             return [["power", "power", "power"], ["log"]]
-        elif self.exp_n == 1000:
-            return [["sin"]]
-        else:
-            return [[j % len(self.torch_funcs) for j in range(self.nonlinear_info[i][0])]
+        elif self.exp_n == 1000:  # Toy-1
+            return [["cos"]]
+        elif self.exp_n == 1001:  # Toy-2
+            return [["exp"]]
+        elif self.exp_n == 1002:  # Toy-3
+            return [["sin", "sin"]]
+        elif self.exp_n == 1003:  # astro 
+            return None
+        return [[j % len(self.torch_funcs) for j in range(self.nonlinear_info[i][0])]
                     for i in range(num_layers)]
 
     def create_structure_model(self, states):
@@ -468,6 +473,7 @@ class SRNetwork(nn.Module):
     def _process_layer(self, X, layer):
         """Process a single layer and return the transformed output."""
         W = layer.W.detach().numpy() * layer.W_mask.detach().numpy()
+        b = layer.b.detach().numpy() #* layer.b_mask.detach().numpy()
         sign_params = self._get_sign_params(layer)
         function_classes = layer.function_classes
         u, v = layer.node_info
@@ -475,11 +481,11 @@ class SRNetwork(nn.Module):
         
         current_index = 0
         for j in range(u):
-            Y[current_index, 0] = self._apply_unary_function(X, W, function_classes[j], sign_params, current_index)
+            Y[current_index, 0] = self._apply_unary_function(X, W, b    , function_classes[j], sign_params, current_index)
             current_index += 1
         
         for j in range(v):
-            Y[j + u, 0] = X[u + 2 * j, 0] * X[u + 2 * j + 1, 0]
+            Y[j + u, 0] = X[u + 2 * j, 0] * X[u + 2 * j + 1, 0] + b[j + u]
         
         return Y
 
@@ -490,7 +496,7 @@ class SRNetwork(nn.Module):
         except AttributeError:
             return None
 
-    def _apply_unary_function(self, X, W, func, sign_params, current_index):
+    def _apply_unary_function(self, X, W, b, func, sign_params, current_index):
         """Apply a unary function to the input and return the result."""
         if isinstance(func, SafePower):
             # For power function, we need to handle each input dimension separately
@@ -505,18 +511,20 @@ class SRNetwork(nn.Module):
         else:
             # Handle other unary functions (log, exp, sin)
             # Get the linear combination of inputs using the weights
-            x_term = sum(W[current_index, j] * X[0, j] for j in range(X.shape[1]))
+            x_term = sum(W[current_index, j] * X[0, j] for j in range(X.shape[1]))# + b[current_index]
             
             # Get the function name from the function class
             func_name = func.__class__.__name__.lower().replace('safe', '')
             
             # Map the function name to the corresponding sympy function
             if func_name == 'exp':
-                return self.sympy_funcs[0](x_term)  # exp
+                return self.sympy_funcs[1](x_term)  # exp
             elif func_name == 'log':
-                return self.sympy_funcs[1](x_term)  # log
+                return self.sympy_funcs[2](x_term)  # log
             elif func_name == 'sin':
-                return self.sympy_funcs[2](x_term)  # sin
+                return self.sympy_funcs[3](x_term)  # sin
+            elif func_name == 'cos':
+                return self.sympy_funcs[4](x_term)  # cos   
             else:
                 raise ValueError(f"Unknown function type: {func_name}")
 
@@ -526,7 +534,10 @@ class SRNetwork(nn.Module):
             expr = X[0, i]
             expr = expr.xreplace({n: round(n, 5) for n in expr.atoms(sp.Number) if n.is_real})
             expr = expr.xreplace({t: 0 for t in expr.atoms(sp.Add) if t.is_real and abs((t.evalf())) < 1e-5})
-            X[0, i] = sp.simplify(expr)
+            try:    
+                X[0, i] = sp.simplify(expr)
+            except:
+                X[0, i] = expr
         
         return "\n".join([f"y{i+1} = {X[0, i]}" for i in range(X.cols)])
 

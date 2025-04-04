@@ -11,11 +11,11 @@ add_project_root_to_sys_path()
 
 import torch
 import numpy as np
-from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower
+from src.models.custom_functions import SafeIdentityFunction, SafeLog, SafeExp, SafeSin, SafePower, SafeCos
 from src.training.trainer import Trainer
 from src.training.connectivity_trainer import ConnectivityTrainer
 from src.utils.plotting import plot_results 
-from src.utils.data_utils import get_nguyen_data_loaders, generate_nguyen_data
+from src.utils.data_utils import get_data_loaders, generate_astro_data
 from src.models.model_initialization import initialize_model
 
 def main():
@@ -29,6 +29,7 @@ def main():
             "exp": SafeExp(),
             "log": SafeLog(),
             "sin": SafeSin(),
+            "cos": SafeCos(),
             "power": SafePower(),
             # Idea: Add "x" function just to know x in the layer
         }
@@ -40,10 +41,10 @@ def main():
     nonlinear_info = [(1, 0), (0, 0), (0, 0)]
 
     # Get data loaders using the new utility function
-    train_loader, val_loader = get_nguyen_data_loaders('toy-1', batch_size=64)
+    X, y = generate_astro_data('toy-1')
+    train_loader, val_loader = get_data_loaders(X, y, batch_size=64)
     
-    # Get the full dataset for plotting
-    X, y = generate_nguyen_data('toy-1')
+    
 
     # Initialize model
     model = initialize_model(
@@ -59,16 +60,17 @@ def main():
     # Training configuration
     config = {
         'training': {
-            'num_epochs': 1500,
+            'num_epochs': 500,
             'learning_rate': 0.01,
-            'reg_strength': 1,
+            'reg_strength': 0.0001,
             'decimal_penalty': 0.01,
             'scheduler': 'progressive',  # One of: cosine, cyclic, progressive
             # Connectivity training specific parameters
             'use_connectivity_training': False,  # Set to False for classical training
             'max_architectures': 10,
             'max_patterns_per_layer': 5,
-            'num_parallel_trials': 1
+            'num_parallel_trials': 1,
+            'print_training_stats': True
         }
     }
 
@@ -89,6 +91,7 @@ def main():
             num_parallel_trials=config['training'].get('num_parallel_trials', 3)
         )
     else:
+
         trainer = Trainer(
             model=model,
             train_loader=train_loader,
